@@ -25,9 +25,9 @@ else:
 
 DEFINES = ['-std=c++17']
 
-srcDir = '../..'
-cppInc = ['c:/MyPrograms/Installs/Include', os.path.join(srcDir, 'isocline-pp/include')]
-ldLibs = ['c:/MyPrograms/Installs/lib', os.path.join(srcDir, 'isocline-pp/build_mingw')]
+srcDir = '../'
+cppInc = [os.path.join(srcDir, 'isocline-pp/include')]
+ldLibs = [os.path.join(srcDir, 'isocline-pp/build_mingw')]
 libs = ['isocline']
 
 buildDir = 'build_mingw'
@@ -39,7 +39,7 @@ env = Environment(tools=['mingw'], CPPPATH=cppInc, CPPFLAGS=OPT)
 VariantDir(buildDir, '.', duplicate=0)
 
 # the programs
-progs = {'CrabShell': ['CrabShell.cpp', 'History.cpp', 'Utilities.cpp']}
+progs = {'CrabShell': ['CrabShell.cpp', 'History.cpp', 'Utilities.cpp', 'Config.cpp']}
 
 srcObj = {}
 for p in progs:

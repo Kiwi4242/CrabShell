@@ -7,7 +7,7 @@
   Various utility functions
 */
 
-  
+
 #include <filesystem>
 #include <algorithm>
 namespace fs = std::filesystem;
@@ -23,6 +23,12 @@ namespace Utilities {
 #else
   static const bool isWindows = false;
 #endif
+
+
+  std::string GetEnvVar(const std::string &var)
+  {
+    return std::getenv(var.c_str());
+  }
 
   std::string ToLower(const std::string &st)
   {
@@ -51,7 +57,7 @@ namespace Utilities {
 
 
   bool StripString(std::string &cmd)
-  /* remove white space at start and end of cmd */
+  /* remove white space at start of cmd */
   {
     int pos = cmd.find_first_not_of(" \t", 0);
     if (pos != cmd.npos && pos != 0) {
@@ -66,6 +72,9 @@ namespace Utilities {
     /* remove quotes from start and end
        change any / to \
        */
+    // remove blanks at start of line
+    StripString(path);
+
     int pos;
     while ((pos = path.find('"', 0)) != path.npos) {
       path.erase(pos, 1);
@@ -85,9 +94,10 @@ namespace Utilities {
     */
     FixupPath(path);
     if (path[0] == '~' && path[1] == pathSep) {
-      char *home = getenv("HOME");
-      if (home)
+      std::string home = GetEnvVar("HOME");
+      if (home.length()) {
         path.replace(0, 1, home);
+      }
     }
     
     return true;
@@ -355,7 +365,7 @@ bool ParseLine(const std::string &line, std::vector<std::string> &toks)
       int tdPos;
       std::string pathSt = pathNoName.string();
       if ((tdPos = pathSt.find("~")) != std::string::npos) {
-        std::string home = std::getenv("HOME");
+        std::string home = GetEnvVar("HOME");
         if (home.back() != Utilities::pathSep) {
           home += pathSep;
         }

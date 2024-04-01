@@ -35,7 +35,7 @@ using json = nlohmann::json;
 
 #include "History.h"
 #include "Utilities.h"
-
+#include "Config.h"
 
 
 class ShellDataClass {
@@ -55,8 +55,11 @@ protected:
   std::string currentPrompt;
   int maxPrompt;
 
-  std::filesystem::path configFolder;
+  fs::path configFolder;
   std::ofstream *log;
+
+  std::map<std::string, std::string> aliases;
+  std::string startDir;
 
   typedef bool (*HookFunc)(const std::vector<std::string> &args, ShellDataClass &shell);
   std::map<std::string, HookFunc> hooks;
@@ -207,7 +210,7 @@ void ReadLineClass::AddHistory(const std::string &statement, const bool write)
 
 void ReadLineClass::ReadHistory(const std::string &name)
 {
-    std::filesystem::path inPath = shell->GetConfigFolder() / name;
+    fs::path inPath = shell->GetConfigFolder() / name;
 
 #ifdef OLD_HISTORY
     history.clear();
@@ -502,12 +505,24 @@ int ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   }
 #endif
 
+  // update aliases
+  if (aliases.count(cmd) > 0) {
+    args[0] = aliases[cmd];
+  }
+
   int res = RunHooks(args);
   if (res) {
     return res;
   }
 
-  std::system(commandLineArg.c_str());
+  // Reconstruct the command line
+  std::string cmdLine;
+  for (int i = 0; i < args.size()-1; i++) {
+    cmdLine += args[i] + " ";
+  }
+  cmdLine += args.back();
+
+  std::system(cmdLine.c_str());
 
 #ifdef OLD_DRIVE
   if (resetCWD) {
@@ -569,7 +584,9 @@ namespace ShellFuncs {
 
 ShellDataClass::ShellDataClass(bool useLog) 
 {
-  configFolder = ".crabshell";
+
+  std::string home = Utilities::GetEnvVar("HOME");
+  configFolder = fs::path(home) / ".crabshell";
   if (useLog) {
     log = new std::ofstream(configFolder / "CrabShell.log");
   } else {
@@ -584,8 +601,27 @@ ShellDataClass::ShellDataClass(bool useLog)
   hooks["set"] = &ShellFuncs::SetEnv;
   maxPrompt = 25;
 
-  GetPaths();
+  std::string configFile = (configFolder / "Config.dat").string();
 
+  ConfigMap configData;
+  if (LoadConfig(configFile, configData)) {
+    if (configData.count("Aliases") > 0) {
+      std::vector<std::vector<std::string>> vals = configData["Aliases"];
+      for (int i = 0; i < vals.size(); i++) {
+        if (vals[i].size() == 2) {
+          aliases[vals[i][0]] = vals[i][1];
+        }
+      }
+    }
+    if (configData.count("Start Dir")) {
+      std::vector<std::vector<std::string>> vals = configData["Start Dir"];
+      if (vals.size() == 1 and vals[0].size() == 2) {
+        startDir = vals[0][1];
+        DoCD(startDir);
+      }
+    }
+  }
+  GetPaths();
 }
 
 
@@ -602,53 +638,63 @@ int main(int argc, char* argv[])
     }
   }
 
-  std::shared_ptr<ShellDataClass> shell = std::make_shared<ShellDataClass>(doLog);
-  ReadLineClass readLine(shell);
+  try {
+    std::shared_ptr<ShellDataClass> shell = std::make_shared<ShellDataClass>(doLog);
+    ReadLineClass readLine(shell);
 
-  setlocale(LC_ALL,"C.UTF-8");  // we use utf-8 in this example
+    setlocale(LC_ALL,"C.UTF-8");  // we use utf-8 in this example
 
-  // use `ic_print` functions to use bbcode's for markup
-  readLine.StyleDef("kbd","gray underline");     // you can define your own styles
-  // ic_style_def("ic-prompt","ansi-maroon");  // or re-define system styles
-  
-  readLine.Printf( "[b]Welcome to CrabShell[/b]\n\n", "");
-  
-  // enable history; use a NULL filename to not persist history to disk
-#ifdef OLD_HISTORY
-  readLine.ReadHistory("history.json");
-#else
-  readLine.ReadHistory("history.dat");
-#endif  
+    // use `ic_print` functions to use bbcode's for markup
+    readLine.StyleDef("kbd","gray underline");     // you can define your own styles
+    // ic_style_def("ic-prompt","ansi-maroon");  // or re-define system styles
+    
+    readLine.Printf( "[b]Welcome to CrabShell[/b]\n\n", "");
+    
+    // enable history; use a NULL filename to not persist history to disk
+  #ifdef OLD_HISTORY
+    readLine.ReadHistory("history.json");
+  #else
+    readLine.ReadHistory("history.dat");
+  #endif  
 
-  // enable syntax highlighting with a highlight function
-  // ic_set_default_highlighter(highlighter, NULL);
+    // enable syntax highlighting with a highlight function
+    // ic_set_default_highlighter(highlighter, NULL);
 
-  // try to auto complete after a completion as long as the completion is unique
-  readLine.EnableAutoTab(false);
+    // try to auto complete after a completion as long as the completion is unique
+    readLine.EnableAutoTab(false);
 
-  // inline hinting is enabled by default
-  readLine.EnableHint(true);
+    // inline hinting is enabled by default
+    readLine.EnableHint(true);
 
-  // run until empty input
-  char* input;
+    // run until empty input
+    char* input;
 
-  while(true) {
-    std::string input = readLine.ReadLine(shell->GetPrompt());   // ctrl-d returns NULL (as well as errors)
-    try {
+    while(true) {
+      std::string input = readLine.ReadLine(shell->GetPrompt());   // ctrl-d returns NULL (as well as errors)
+      try {
+        // readLine.Printf("%s\n", input.c_str());
+        shell->ProcessCommand(input);
+        if (input == "exit") {
+            break;
+        } 
 
-      // readLine.Printf("%s\n", input.c_str());
-      shell->ProcessCommand(input);
-      if (input == "exit") {
-          break;
-      } 
+        if (input.length() > 0)  {
+          readLine.AddHistory(input, true);
+        }
+      } catch (std::exception &e) {
+        // catch and continue
+        readLine.Printf("Error: with command\n","");
+      }
 
-      readLine.AddHistory(input, true);
-    } catch (std::exception &e) {
-      readLine.Printf("Error: with command\n","");
     }
 
+    readLine.Printf("Goodbye\n", "");
+
+  } catch (std::exception &e) {
+    std::cerr << "Error starting CrabShell " << e.what() << "\n";
+    return 1;
   }
 
-  readLine.Printf("Goodbye\n", "");
+
   return 0;
 }

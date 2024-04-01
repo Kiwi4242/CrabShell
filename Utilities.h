@@ -24,6 +24,7 @@ namespace Utilities {
 #endif
 
   void SplitString(const std::string &st, const std::string &sep, std::vector<std::string> &res);
+  bool StartsWith(const std::string &mainStr, const std::string &startIn, const bool ignoreCase=false);
 
   bool StartsWith(const std::string &mainStr, const std::string &start, const bool ignoreCase);
   bool GetFileMatches(const std::string &line, std::vector<CompletionItem> &matches);
@@ -37,5 +38,7 @@ namespace Utilities {
   
   bool FixupPath(std::string &path);
   bool StripString(std::string &cmd);
+
+  std::string GetEnvVar(const std::string &var);
 
 }
