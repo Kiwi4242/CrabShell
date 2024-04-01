@@ -40,5 +40,6 @@ namespace Utilities {
   bool StripString(std::string &cmd);
 
   std::string GetEnvVar(const std::string &var);
+  std::string GetHome();
 
 }

@@ -27,7 +27,33 @@ namespace Utilities {
 
   std::string GetEnvVar(const std::string &var)
   {
-    return std::getenv(var.c_str());
+    const char * env = std::getenv(var.c_str());
+    if (env) {
+      return env;
+    }
+    return "";
+  }
+
+  std::string GetHome()
+  {
+    std::string home = GetEnvVar("HOME");
+    std::string pathSep = std::string(1, Utilities::pathSep);
+    if (home.length() == 0) {
+      if (isWindows) {
+        // HOMEDRIVE and HOMEPATH
+        std::string homeDir = GetEnvVar("HOMEDRIVE");
+        std::string homePath = GetEnvVar("HOMEPATH");
+        if (homeDir.length() > 0) {
+          if (homePath.length() > 0) {
+            return homeDir + homePath;
+          }
+          return homeDir;
+        }
+        return pathSep;   // set to root
+      }
+      return pathSep;     // set to root
+    }
+    return home;
   }
 
   std::string ToLower(const std::string &st)
@@ -94,7 +120,7 @@ namespace Utilities {
     */
     FixupPath(path);
     if (path[0] == '~' && path[1] == pathSep) {
-      std::string home = GetEnvVar("HOME");
+      std::string home = GetHome();
       if (home.length()) {
         path.replace(0, 1, home);
       }
@@ -365,7 +391,7 @@ bool ParseLine(const std::string &line, std::vector<std::string> &toks)
       int tdPos;
       std::string pathSt = pathNoName.string();
       if ((tdPos = pathSt.find("~")) != std::string::npos) {
-        std::string home = GetEnvVar("HOME");
+        std::string home = GetHome();
         if (home.back() != Utilities::pathSep) {
           home += pathSep;
         }

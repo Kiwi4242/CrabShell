@@ -585,7 +585,7 @@ namespace ShellFuncs {
 ShellDataClass::ShellDataClass(bool useLog) 
 {
 
-  std::string home = Utilities::GetEnvVar("HOME");
+  std::string home = Utilities::GetHome();
   configFolder = fs::path(home) / ".crabshell";
   if (useLog) {
     log = new std::ofstream(configFolder / "CrabShell.log");
