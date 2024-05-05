@@ -12,6 +12,8 @@
 
 #include <vector>
 #include <string>
+#include <memory>
+#include <unordered_map>
 
 
 class HistoryItem {
@@ -23,13 +25,17 @@ public:
     HistoryItem(){}
     HistoryItem(const std::string &c, const std::string &d, const std::string &f);
 
-
 };
 
 
+typedef std::shared_ptr<HistoryItem> HistoryItemPtr;
+
 class ShellHistoryClass {
 protected:
-    std::vector<HistoryItem> history;
+    std::vector<HistoryItemPtr> history;
+    std::unordered_map<std::string, std::vector<HistoryItemPtr>> folderMap;
+    std::vector<HistoryItemPtr> noFolder;
+    // std::map<std::string, HistoryItemPtr> historyMap;
     std::string fileName;
 
 public:
@@ -43,9 +49,11 @@ public:
         return history.size();
     }
 
-    const HistoryItem &Get(const unsigned int n) const;
+    const HistoryItemPtr &Get(const unsigned int n) const;
+    std::vector<HistoryItemPtr> GetFolderItems(const std::string &folder);
+    const std::vector<HistoryItemPtr> &GetNoFolderItems();
 
     void Clear();
-    void Append(const std::string &, const bool appendToFile);
+    void Append(const std::string &cmd, const std::string &folder, const std::string &t, const bool appendToFile);
 };
 

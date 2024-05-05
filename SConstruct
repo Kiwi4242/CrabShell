@@ -32,7 +32,7 @@ libs = ['isocline']
 
 buildDir = 'build_mingw'
 
-env = Environment(tools=['mingw'], CPPPATH=cppInc, CPPFLAGS=OPT)
+env = Environment(tools=['mingw'], CPPPATH=cppInc, CPPFLAGS=OPT+DEFINES)
 
 ##################################################
 # Start of scons statements

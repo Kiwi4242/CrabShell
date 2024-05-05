@@ -17,11 +17,14 @@ class CompletionItem;
 
 namespace Utilities {
 
-#ifdef WIN32  
+#ifdef __WIN32__
   static const char pathSep = '\\';
 #else
   static const char pathSep = '/';
 #endif
+
+
+
 
   void SplitString(const std::string &st, const std::string &sep, std::vector<std::string> &res);
   bool StartsWith(const std::string &mainStr, const std::string &startIn, const bool ignoreCase=false);
@@ -34,12 +37,16 @@ namespace Utilities {
   void SetCurrentDirectory(const std::string &d);
   std::string GetCurrentDirectory();
 
-  bool ParseLine(const std::string &line, std::vector<std::string> &args);
+  bool ParseLine(const std::string &line, std::vector<std::string> &args, const bool stripQuotes);
   
   bool FixupPath(std::string &path);
   bool StripString(std::string &cmd);
 
   std::string GetEnvVar(const std::string &var);
   std::string GetHome();
+  std::string GetConfigFolder();
+
+  void SetupLogging(const bool doLog);
+  void LogMessage(const std::string &msg);
 
 }

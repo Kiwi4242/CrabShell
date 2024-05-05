@@ -8,8 +8,9 @@
 */
 
 
-#include <filesystem>
+#include <fstream>
 #include <algorithm>
+#include <filesystem>
 namespace fs = std::filesystem;
 
 #include <isocline_pp.h>
@@ -23,6 +24,79 @@ namespace Utilities {
 #else
   static const bool isWindows = false;
 #endif
+
+
+  class LogClass {
+  protected:
+    std::ofstream out;
+    bool doLog;
+
+  public:
+      static LogClass *GetLog() {
+        static LogClass instance;  // Guaranteed to be destroyed.
+                                   // Instantiated on first use.
+        return &instance;
+      }
+
+  private:
+      LogClass() 
+      {
+        doLog = false;
+      }
+
+
+      // C++ 11
+      // =======
+      // We can use the better technique of deleting the methods
+      // we don't want.
+  public:
+      LogClass(LogClass const&)  = delete;
+      void operator=(LogClass const&)  = delete;
+
+      // Note: Scott Meyers mentions in his Effective Modern
+      //       C++ book, that deleted functions should generally
+      //       be public as it results in better error messages
+      //       due to the compilers behavior to check accessibility
+      //       before deleted status
+
+  public:
+
+    void SetupLogging(const bool doL) {
+        doLog = doL;
+        if (doLog) {
+          fs::path configFolder(Utilities::GetConfigFolder());
+          fs::path logFile = configFolder / "CrabShell.log";
+          out.open(logFile);
+        }
+      }
+
+
+    void LogMessage(const std::string &msg) {
+      if (doLog) {
+        out << msg << "\n";
+      }
+    }
+
+  };
+
+
+  void SetupLogging(const bool doLog) 
+  {
+    LogClass *log = LogClass::GetLog();
+    log->SetupLogging(doLog);
+  }
+
+  void LogMessage(const std::string &msg) {
+    LogClass::GetLog()->LogMessage(msg);
+  }
+
+
+  std::string GetConfigFolder()
+  {
+      std::string home = Utilities::GetHome();
+      fs::path p = fs::path(home) / ".crabshell";
+      return p.string();
+  }
 
 
   std::string GetEnvVar(const std::string &var)
@@ -163,188 +237,82 @@ namespace Utilities {
 
 
 int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
-{
-    // replace all occurrences of from with to in str 
-    // return count of changes
-    size_t start_pos = 0;
-    int n = 0;
-    while ((start_pos = str.find(from, start_pos)) != str.npos)
-    {
-        str.replace(start_pos, from.length(), to);
-        n++;
-        start_pos += to.length();       // Handles case where 'to' is a substring of 'from'
-    }
-    return n;
-}
-
-
-int CountAll(std::string &str, const std::string &sub)
-{
-    // count all occurrences of sub in str 
-    size_t start_pos = 0;
-    int n = 0;
-    while ((start_pos = str.find(sub, start_pos)) != str.npos) {
-        n++;
-        start_pos += sub.length();
-    }
-    return n;
-}
-
-
-// Parse a line into arguments
-bool ParseLine(const std::string &line, std::vector<std::string> &toks)
-{
-    // split line into tokens separated by whitespace
-    // keep spaces inside quotes
-    // return true if whitespace at the end of the line - could be "cd " then hit tab
-    toks.clear();
-    bool lastBlank = false;
-
-    size_t pos = 0;
-    std::string whiteSpace(" \t");
-
-    // find last non-whitespace
-    size_t lastPos = line.find_last_not_of(whiteSpace);
-    if (lastPos == line.npos) {
-        // no non-whitespace
-        return true;
-    }
-
-    lastBlank = lastPos < line.length()-1;
-    std::string str = line.substr(0, lastPos+1);
-    std::string blankTok;
-    if (lastBlank) {
-      blankTok = line.substr(lastPos+1);
-    }
-
-    // replace any ' with " 
-    std::string quot(1, '"');
-    ReplaceAll(str, "'", quot);
-
-    int count = CountAll(str, quot);
-    if (count % 2 == 1) {
-        // append " to end of line
-        str += quot;
-    }
-
-    // split into " " strings
-    int lineLen = str.length();
-    std::vector<std::string> quotToks;
-    std::vector<bool> quoted;
-    if (count > 0) {
-        size_t pos = 0;
-        size_t pos1;
-        while ((pos1 = str.find(quot, pos)) != str.npos) {
-            if (pos1-pos > 0) {
-                // section before "
-                quotToks.push_back(str.substr(pos, pos1-pos));
-                quoted.push_back(false);
-            }
-            size_t pos2 = str.find(quot, pos1+1);
-            quotToks.push_back(str.substr(pos1, pos2-pos1+1));   // want the quote
-            quoted.push_back(true);
-            pos = pos2 + 1;
-            if (pos >= lineLen) {
-                break;
-            }
-        }
-        if (pos < lineLen) {
-            quotToks.push_back(str.substr(pos));
-            quoted.push_back(false);
-        }
-    } else {
-        quotToks.push_back(str);
-        quoted.push_back(false);
-    }
-
-    // now process the pieces
-    for (int i = 0; i < quotToks.size(); i++) {
-        if (quoted[i]) {
-            // std::cout << "Adding quoted ." << quotToks[i] << ".\n";
-            toks.push_back(quotToks[i]);
-        } else {
-            // split into whitespace
-            std::string &tok = quotToks[i];
-            size_t pos = 0;
-            size_t pos1;
-            while ((pos1 = tok.find_first_of(whiteSpace, pos)) != tok.npos) {
-                if (pos1 > pos) {
-                    toks.push_back(tok.substr(pos, pos1-pos));  // don't want the whitespace
-                }
-                pos = pos1 + 1;
-                if (pos >= tok.length()) {
-                    break;
-                }
-            }
-            if (pos < tok.length()) {
-              toks.push_back(tok.substr(pos));
-            }
-        }
-    }
-
-    if (lastBlank) {
-      toks.push_back(blankTok);
-    }
-    return lastBlank;
-}
-
-
-  // Parse a line into arguments
-  bool ParseLine_old(const std::string &line, std::vector<std::string> &args,
-                 std::vector<int> &posns)
   {
-    int pos = 0;
-    std::string whiteSpace(" \t");
-    int lineLen = line.length();
-    while (pos < lineLen) {
-      // skip white space
-      int nextPos = line.find_first_not_of(whiteSpace, pos);
-      if (nextPos == line.npos)
-        nextPos = pos;
-      
-      // anything left?
-      if (nextPos == line.length())
-        break;
+      // replace all occurrences of from with to in str 
+      // return count of changes
+      size_t start_pos = 0;
+      int n = 0;
+      while ((start_pos = str.find(from, start_pos)) != str.npos)
+      {
+          str.replace(start_pos, from.length(), to);
+          n++;
+          start_pos += to.length();       // Handles case where 'to' is a substring of 'from'
+      }
+      return n;
+  }
 
-      // Find pos of next white space
-      int nextSpace = line.find_first_of(whiteSpace, nextPos);
-      if (nextSpace == line.npos) {
-        args.push_back(line.substr(nextPos));
-        posns.push_back(pos);
-        break;
+
+  int CountAll(std::string &str, const std::string &sub)
+  {
+      // count all occurrences of sub in str 
+      size_t start_pos = 0;
+      int n = 0;
+      while ((start_pos = str.find(sub, start_pos)) != str.npos) {
+          n++;
+          start_pos += sub.length();
       }
-      
-      // Find any quote
-      int nextQuote = line.find('"', nextPos);
-      if (nextQuote != line.npos && nextQuote < nextSpace) {
-        // quote before next space - so adjust nextSpace
-        // nextSpace is the next space after the closing quote
-        int closeQuote = line.find('"', nextQuote + 1);
-        if (closeQuote == line.npos) {
-          // no closing quote assume everything is quoted
-          // just remove the quote
-          std::string tmp = line.substr(nextPos);
-          args.push_back(tmp);
-          posns.push_back(nextPos);
-          break;
-        }
-        nextSpace = line.find(whiteSpace, closeQuote+1);
-        if (nextSpace == line.npos) {
-          // no space set nextSpace at end of line
-          nextSpace = lineLen;
-        }
-        
-        // now remove the quotes
-        std::string tmp = line.substr(nextPos, nextSpace - nextPos);
-        args.push_back(tmp);
-        posns.push_back(nextPos);
-      } else {
-        args.push_back(line.substr(nextPos, nextSpace - nextPos));
-        posns.push_back(nextPos);
+      return n;
+  }
+
+
+
+  bool ParseLine(const std::string &line, std::vector<std::string> &tokens, const bool stripQuotes)
+  {
+
+      std::stringstream ss(line);
+      std::string token;
+      char delim = ' ';
+      bool inQuotes = false;
+
+
+      bool lastBlank = false;
+      std::string whiteSpace(" \t");
+
+      // find last non-whitespace
+      size_t lastPos = line.find_last_not_of(whiteSpace);
+      if (lastPos == line.npos) {
+          // no non-whitespace
+          return true;
       }
-      pos = nextSpace + 1;
-    }
-    return 1;
+      lastBlank = lastPos < line.length()-1;
+
+      while (std::getline(ss, token, delim)) {
+          size_t quotPos, lastPos;
+          // remove all quotes
+          bool inQuotes2 = inQuotes;
+          lastPos = 0;
+          while ((quotPos = token.find('"', lastPos)) != std::string::npos) {
+            if (stripQuotes) {
+              token.erase(quotPos, 1);
+            } else {
+              lastPos = quotPos + 1;
+            }
+            inQuotes2 = !inQuotes2;
+          }
+
+          if (!inQuotes) {
+              tokens.push_back(token);
+          } else {
+              tokens.back() += delim + token;
+          }
+
+          inQuotes = inQuotes2;
+          // if (token.find('"') != std::string::npos) {
+          //     inQuotes = !inQuotes;
+          // }
+      }
+
+      return lastBlank;
   }
 
 
@@ -352,7 +320,7 @@ bool ParseLine(const std::string &line, std::vector<std::string> &toks)
   {
 
     std::vector<std::string> args;
-    bool lastBlank = ParseLine(line, args);
+    bool lastBlank = ParseLine(line, args, true);
 
     matches.clear();
 
@@ -408,17 +376,10 @@ bool ParseLine(const std::string &line, std::vector<std::string> &toks)
       searchName = fullPath.filename().string();
     }
 
-    // prefix = searchName;
+    LogMessage("Searching for " + searchName + " in " + searchDir.string());
 
     std::string quote(1, '"');
-
-    // // Replace any environment variables and ~
-    // int tdPos;
-    // if ((tdPos = searchName.find("~")) != searchName.npos) {
-    //   std::string home = std::getenv("HOME");
-    //   searchName = searchName.substr(0, tdPos) + home + searchName.substr(tdPos+1);
-    // }
-    
+  
     std::string name;
     size_t searchLen = searchName.length();
     for(auto const& dir_entry: fs::directory_iterator{searchDir}) {
@@ -430,7 +391,6 @@ bool ParseLine(const std::string &line, std::vector<std::string> &toks)
           // Add quotes if spaces in name
           if (name.find(" ") != name.npos) {
             name = quote + name + quote;
-            prefLen++;
           }
           // check if a folder
           if (fs::is_directory(ent) and name.back() != pathSep) {
@@ -555,3 +515,27 @@ bool ParseLine(const std::string &line, std::vector<std::string> &toks)
   }
 
 }
+
+
+#ifdef MAIN
+
+#include <iostream>
+
+int main(int argc, char const *argv[])
+{
+  
+  if (argc < 2) {
+    std::cout <<  "Usage: Utilities line\n";
+    return 0;
+  }
+  std::string line = argv[1];
+  std::vector<std::string> toks;
+
+  std::cout << "Processing " << line << "\n";
+
+  Utilities::ParseLine(line, toks, true);
+
+  return 0;
+}
+
+#endif

@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <locale.h>
+#include <csignal>
 
 #include <memory>
 #include <vector>
@@ -22,14 +23,8 @@
 #include <filesystem>
 namespace fs = std::filesystem;
 #include <iostream>
-
-
-#ifdef OLD_HISTORY
-#include <nlohmann/json.hpp>
-// for convenience
-using json = nlohmann::json;
-#endif
-
+#include <chrono>
+using namespace std::chrono_literals;
 
 #include <isocline_pp.h>
 
@@ -37,18 +32,14 @@ using json = nlohmann::json;
 #include "Utilities.h"
 #include "Config.h"
 
+extern char ** environ;
+
 
 class ShellDataClass {
 protected:
 
-#ifdef OLD_DRIVE
-  static const int MAX_DRIVES = 26;
-  char currentDrive;  // store the current drive - maybe as a:
-  std::string currentDir[MAX_DRIVES];
-#else
   std::string currentDir;    
   std::string root;
-#endif  
 
   std::vector<std::string> pushDirs;
 
@@ -56,7 +47,7 @@ protected:
   int maxPrompt;
 
   fs::path configFolder;
-  std::ofstream *log;
+  bool doLog;  
 
   std::map<std::string, std::string> aliases;
   std::string startDir;
@@ -68,8 +59,8 @@ public:
   ShellDataClass(bool useLog=false) ;
   
   ~ShellDataClass() {
-    if (log)
-      log->close();
+    // if (log)
+    //   log->close();
   }
 
 
@@ -82,20 +73,7 @@ public:
   // Get the drive number corresponding to a letter
   static int GetDriveNo(const char d);
 
-#ifdef OLD_DRIVE
-  // Get the current directory
-  const std::string &GetDriveDir() {return currentDir[GetDriveNo(currentDrive)];}
-
-  // Set the current directory
-  void SetDriveDir(const std::string &dir) {
-    currentDir[GetDriveNo(currentDrive)] = dir;
-  }
-  
-  // Get the current dir associated with the drive driveLet (a, b, c etc)
-  const std::string &GetDriveDir(const char driveLet) {
-    return currentDir[GetDriveNo(driveLet)];
-  }
-#endif
+  const std::string &GetCurrentDir() const {return currentDir;}
 
   const std::string GetPrompt();
 
@@ -108,27 +86,18 @@ public:
 
   int RunHooks(std::vector<std::string> &args);
 
-  void LogMessage(const std::string &msg) {
-    if (log) {
-      *log << msg << "\n";
-      log->flush();
-    }
-  }
-
-  const fs::path &GetConfigFolder() const {
-    return configFolder;
-  }
 };
 
 
 class ReadLineClass : public IsoclinePP {
 protected:
   std::shared_ptr<ShellDataClass> shell;
-#ifdef OLD_HISTORY  
-  StVec history;
-#else
   ShellHistoryClass history;
-#endif
+
+
+  std::chrono::high_resolution_clock hintClock;
+  int hintDelayMS;
+  std::chrono::time_point<std::chrono::high_resolution_clock> lastHint;
 
 public:
     ReadLineClass(std::shared_ptr<ShellDataClass> sh);
@@ -137,12 +106,18 @@ public:
     bool Completer(const std::string &inp, std::vector<CompletionItem> &completions);
 
     // Provide a hint after a new character is entered
-    bool Hint(const std::string &inp, CompletionItem &hint);
+    bool Hint(const std::string &inp, CompletionItem &hint, const bool atEnd);
 
     using IsoclinePP::AddHistory;
-    virtual void AddHistory(const std::string &statement, const bool write);
+    virtual void AddHistory(const std::string &statement, const std::string &folder, const bool write);
 
     void ReadHistory(const std::string &name);
+
+    virtual int HistoryCount();
+    virtual std::string GetHistoryItem(const ssize_t n);
+    virtual void HistoryDelete(const ssize_t ind, const ssize_t n);
+    virtual void HistoryAdd(const std::string &st);
+
 };
 
 
@@ -151,46 +126,65 @@ ReadLineClass::ReadLineClass(std::shared_ptr<ShellDataClass> sh) : IsoclinePP(),
 {
     EnableHint(true);
     EnableMultiLine(false);
+    UseCustomHistory();
+    hintDelayMS = 300;
+    lastHint = hintClock.now();
 }
 
 // -------------------------------------------------------------------------------
 // Completion
 // -------------------------------------------------------------------------------
 
-bool ReadLineClass::Hint(const std::string &inp, CompletionItem &hint)
+bool ReadLineClass::Hint(const std::string &inp, CompletionItem &hint, const bool atEnd)
 {
-#ifdef OLD_HISTORY    
-    for (StVec::const_reverse_iterator it=history.rbegin(); it!=history.rend(); it++) {
-      if (Utilities::StartsWith(*it, inp, false)) {
-        pref = inp;
-        hint = *it;
-        break;
-      }
-    }
-#else    
-    int no = history.GetNoHistory();
     hint.comp = "";
     hint.delBefore = 0;
+
+    if (!atEnd) {
+      return false;      
+    }
+
+    auto t1 = hintClock.now();
+    int delta = (t1 - lastHint) / 1ms;
+    if (delta < hintDelayMS) {
+      return false;
+    }
+    lastHint = t1;
+    
+    // need to search backwards for latest
+    std::string folder = shell->GetCurrentDir();
+    auto items = history.GetFolderItems(folder);
+    int no = items.size();
     for (int i = no-1; i >= 0; i--) {
-      const HistoryItem &it = history.Get(i);
-      if (Utilities::StartsWith(it.cmd, inp, false)) {
+      auto it = items[i];
+      if (Utilities::StartsWith(it->cmd, inp, false)) {
         hint.delBefore = inp.length();
-        hint.comp = it.cmd;
-        break;
+        hint.comp = it->cmd;
+        return true;
       }
     }
-#endif    
-    return true;
+    items = history.GetNoFolderItems();
+    for (int i = items.size()-1; i >= 0; i--) {
+      auto it = items[i];
+      if (Utilities::StartsWith(it->cmd, inp, false)) {
+        hint.delBefore = inp.length();
+        hint.comp = it->cmd;
+        return true;
+      }
+    }
+
+    return false;
 }
+
 
 bool ReadLineClass::Completer(const std::string &inp, std::vector<CompletionItem> &completions)
 {
   try {
     Utilities::GetFileMatches(inp, completions);
 
-    shell->LogMessage("Completions for " + inp);
+    Utilities::LogMessage("Completions for " + inp);
     for (size_t i = 0; i < completions.size(); i++) {
-      shell->LogMessage("  " + completions[i].comp);
+      Utilities::LogMessage("  " + completions[i].comp);
     }
   } catch (std::exception &e) {
   }
@@ -198,130 +192,71 @@ bool ReadLineClass::Completer(const std::string &inp, std::vector<CompletionItem
   return completions.size() > 0;
 }
 
-void ReadLineClass::AddHistory(const std::string &statement, const bool write)
+
+void ReadLineClass::AddHistory(const std::string &statement, const std::string &folder, const bool write)
 {
-  IsoclinePP::AddHistory(statement);
-#ifdef OLD_HISTORY  
-  history.push_back(statement);
-#else  
-  history.Append(statement, write);
-#endif  
+  // IsoclinePP::AddHistory(statement);
+
+  std::chrono::high_resolution_clock clock;
+  auto t1 = clock.now();
+  const auto t2 = std::chrono::system_clock::to_time_t(t1);
+  char nowSt[128];
+  std::strftime(nowSt, 128, "%Y-%m-%d %H:%M:%S", std::localtime(&t2));
+  // std::string nowSt = std::put_time(std::localtime(&t2), "%F %T.\n");
+
+  history.Append(statement, folder, nowSt, write);
 }
+
 
 void ReadLineClass::ReadHistory(const std::string &name)
 {
-    fs::path inPath = shell->GetConfigFolder() / name;
+    fs::path inPath = fs::path(Utilities::GetConfigFolder()) / name;
 
-#ifdef OLD_HISTORY
-    history.clear();
-    std::ifstream inStr(inPath.string());
-    if (!inStr.good()) {
-      Printf("Unable to open ", name);
-      return;
-    }
-    json hisJson;
-    inStr >> hisJson;
-
-    if (hisJson.find("History") == hisJson.end()) {
-      return;
-    }
-
-   auto his = hisJson["History"];
-   for (json::iterator it = his.begin(); it != his.end(); ++it) {
-      history.push_back((*it)["Cmd"]);
-   }
-    
-  inStr.close();
-  AddHistory(history);
-#else 
    history.Clear();
    history.Load(inPath.string());
 
+#ifdef OLD
    std::vector<std::string> hisItems;
    for (unsigned int i = 0; i < history.GetNoHistory(); i++) {
-      const HistoryItem &it = history.Get(i);
-      hisItems.push_back(it.cmd);
+      const HistoryItemPtr &it = history.Get(i);
+      hisItems.push_back(it->cmd);
     }
     AddHistory(hisItems);
-#endif  
+#endif    
 }
 
 
-#if 0
-int ShellDataClass::GetDriveNo(const std::string &d)
+int ReadLineClass::HistoryCount() 
 {
-  int result;
-  if (d[0] < 'a')
-    result = d[0] - 'A';
-  else
-    result = d[0] - 'a';
-  if (result < 0 || result >= MAX_DRIVES)
-    result = 0;
-  return result;
+    return history.GetNoHistory();
 }
-#endif
 
-#ifdef OLD_DRIVE
-int ShellDataClass::GetDriveNo(const char d)
+std::string ReadLineClass::GetHistoryItem(const ssize_t n)
 {
-  if (d < 'a')
-    return d - 'A';
-  else
-    return d - 'a';
+  // return in reverse order
+  int no = history.GetNoHistory();
+  if (n < no) {
+    return history.Get(no-1-n)->cmd;
+  }
+  return "";
 }
 
-#endif
+void ReadLineClass::HistoryDelete(const ssize_t ind, const ssize_t n)
+{}
+
+void ReadLineClass::HistoryAdd(const std::string &st)
+{}
 
 int ShellDataClass::GetPaths()
 {
   // set currentDir and root
-
-#ifdef OLD_DRIVE  
-
-  std::string currentPath, tmpPath;
-#ifdef __MINGW32__  
-  char drive[16], dir[PATH_MAX], file[PATH_MAX], ext[PATH_MAX];
-#else
-  char *drive, *dir, *file;
-#endif
-  int len;
-
-  //  getcwd(currentPath, PATH_MAX + 1);
-  currentPath = Utilities::GetCurrentDirectory();
-#ifdef __MINGW32__  
-  _splitpath(currentPath.c_str(), drive, dir, file, ext);
-#else
-  _splitpath2(currentPath.c_str(), tmpPath, &drive, &dir, &file, NULL);
-#endif
-
-  currentDrive = drive[0];
-
-  std::string cd;
-#ifdef __MINGW32__
-  int dirLen = strlen(dir);
-  if (dirLen && dir[dirLen-1] == Utilities::pathSep)
-    dir[dirLen-1] = 0;
-  cd = std::string(dir) + std::string(1, Utilities::pathSep) + std::string(file) + std::string(ext);
-  //  sprintf(cd, "%s%s%s", dir, file, ext);
-#else
-  cd = std::string(dir) + std::string(Utilities::pathSep) + file;
-  sprintf(cd, "%s\\%s", dir, file);
-#endif
-
-  len = cd.length();
-  if (cd[len-1] == Utilities::pathSep)
-    cd.erase(len-1);
-  SetDriveDir(cd);
-
-#else
   currentDir = Utilities::GetCurrentDirectory();
   fs::path curPath(currentDir);
   root = curPath.root_name().string();
-#endif
-
   
   return 1;
 }
+
 
 const std::string ShellDataClass::GetPrompt()
 {
@@ -402,32 +337,6 @@ bool ShellDataClass::PopDir()
   return true;
 }
 
-#ifdef OLD_DRIVE
-int ShellDataClass::SetDrive(const char d)
-{
-#ifdef NOTUSED  
-  unsigned int total;
-  int drive;
-  drive = GetDriveNo(d) + 1;
-#ifdef __MINGW32__  
-  _chdrive(drive);
-#else
-  _dos_setdrive(drive, &total);
-#endif
-
-  if (currentDir[drive-1].length())
-    DoCD(currentDir[drive-1]);
-  else
-    DoCD("\\");
-#endif  
-
-  // can set the drive with "cd d:"
-  std::string drive = std::string(1, d) + ":";
-  Utilities::SetCurrentDirectory(drive);
-  GetPaths();
-  return true;
-}
-#endif
 
 
 int ShellDataClass::RunHooks(std::vector<std::string> &args)
@@ -457,13 +366,6 @@ int ShellDataClass::RunHooks(std::vector<std::string> &args)
   }
   return 0;
 
-#if 0
-  if (args[0] == "exit")
-    exit(1);
-  if (args[0] == "cd" && args.size() > 1)
-    return DoCD(args[1].c_str());
-  return 0;
-#endif
 }
 
 
@@ -475,7 +377,7 @@ int ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   std::vector<std::string> args;
   std::string lastTok;
   
-  bool lastBlank = Utilities::ParseLine(commandLineArg, args);
+  bool lastBlank = Utilities::ParseLine(commandLineArg, args, false);
   std::string cmd = args[0];
 
   Utilities::StripString(cmd);
@@ -484,26 +386,9 @@ int ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   
   // command of the form c:
   if (cmdLen == 2 && cmd[1] == ':') {
-    // std::string drive = GetDriveDir(cmd[0]);
-#ifdef OLD_DRIVE    
-    SetDrive(cmd[0]);
-#else
-    Utilities::SetCurrentDirectory(cmd);
-#endif 
+    DoCD(cmd);
     return 1;
   }
-
-#ifdef OLD_DRIVE
-  bool resetCWD = 0;
-  std::string currentPath;
-  // command of the form c:fred
-  if (cmdLen > 1 && cmd[1] == ':') {
-    currentPath = Utilities::GetCurrentDirectory();    
-    resetCWD = 1;
-    std::string drive = GetDriveDir(cmd[0]);
-    Utilities::SetCurrentDirectory(drive);
-  }
-#endif
 
   // update aliases
   if (aliases.count(cmd) > 0) {
@@ -523,12 +408,6 @@ int ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   cmdLine += args.back();
 
   std::system(cmdLine.c_str());
-
-#ifdef OLD_DRIVE
-  if (resetCWD) {
-    Utilities::SetCurrentDirectory(currentPath);
-  }
-#endif
 
   return 1;
 }
@@ -555,8 +434,47 @@ namespace ShellFuncs {
     return 0;
   }
 
+  bool PWD(const std::vector<std::string> &args, ShellDataClass &shell) {
+    std::string currentPath = Utilities::GetCurrentDirectory();
+    std::cout << currentPath << std::endl; 
+    return true;
+  }
+
   bool PopDir(const std::vector<std::string> &args, ShellDataClass &shell) {
     return shell.PopDir();
+  }
+
+
+  std::string ExpandVars(const std::string &st) {
+    // expand any environment variables in st
+#ifdef __WIN32__
+    std::string newSt;
+    bool inVar = false;
+    int pos = st.find("%");
+    int curPos = 0;
+    int len = st.size();
+    while (pos != st.npos) {
+      if (inVar) {
+        auto var = st.substr(curPos, pos-curPos);
+        var = Utilities::GetEnvVar(var);
+        newSt += var;
+        inVar = false;
+      } else {
+        newSt += st.substr(curPos, pos-curPos);
+        inVar = true;
+      }
+      curPos = pos + 1;
+      if (curPos >= len-1) {
+        break;
+      }
+      pos = st.find("%", curPos);
+    }
+    if (curPos < len) {
+      newSt += st.substr(curPos);
+    }
+    return newSt;
+#else
+#endif    
   }
 
 
@@ -567,11 +485,18 @@ namespace ShellFuncs {
       if (pos != cmd.npos) {
         std::string var = cmd.substr(0, pos);
         std::string val = cmd.substr(pos+1);
+        val = ExpandVars(val);
         _putenv_s(var.c_str(), val.c_str());
         // SetEnvironmentVariable(var.c_str(), val.c_str());
         return 1;
       }
+    } else {
+      char **env = environ;
+      for (env; *env; ++env) {
+        std::cout << *env << "\n";
+      }
     }
+
     return 0;
   }
   
@@ -585,16 +510,12 @@ namespace ShellFuncs {
 ShellDataClass::ShellDataClass(bool useLog) 
 {
 
-  std::string home = Utilities::GetHome();
-  configFolder = fs::path(home) / ".crabshell";
-  if (useLog) {
-    log = new std::ofstream(configFolder / "CrabShell.log");
-  } else {
-    log = nullptr;
-  }
+  configFolder = Utilities::GetConfigFolder();
+  doLog = useLog;  
 
   hooks["exit"] = &ShellFuncs::ExitFunc;
   hooks["cd"] = &ShellFuncs::CD;
+  hooks["pwd"] = &ShellFuncs::PWD;
   hooks["pushd"] = &ShellFuncs::PushDir;
   hooks["popd"] = &ShellFuncs::PopDir;
   hooks["setcolour"] = &ShellFuncs::SetColour;
@@ -625,6 +546,15 @@ ShellDataClass::ShellDataClass(bool useLog)
 }
 
 
+namespace SignalHandling {
+  // Signal handler for SIGINT (ie Ctrl+C) - used in system call
+  int sig = 0;
+  void Handler(int signal)
+  {
+    sig = signal;
+  }
+}
+
 // main program
 int main(int argc, char* argv[]) 
 {
@@ -638,24 +568,26 @@ int main(int argc, char* argv[])
     }
   }
 
+  Utilities::SetupLogging(doLog);
+
   try {
     std::shared_ptr<ShellDataClass> shell = std::make_shared<ShellDataClass>(doLog);
     ReadLineClass readLine(shell);
 
     setlocale(LC_ALL,"C.UTF-8");  // we use utf-8 in this example
 
-    // use `ic_print` functions to use bbcode's for markup
+    // set signal handler
+    std::signal(SIGINT, SignalHandling::Handler);
+
+    // use StyleDef to use bbcode's for markup
     readLine.StyleDef("kbd","gray underline");     // you can define your own styles
+    readLine.StyleDef("ic-prompt","cadetblue");     // you can define your own styles
     // ic_style_def("ic-prompt","ansi-maroon");  // or re-define system styles
     
     readLine.Printf( "[b]Welcome to CrabShell[/b]\n\n", "");
     
     // enable history; use a NULL filename to not persist history to disk
-  #ifdef OLD_HISTORY
-    readLine.ReadHistory("history.json");
-  #else
     readLine.ReadHistory("history.dat");
-  #endif  
 
     // enable syntax highlighting with a highlight function
     // ic_set_default_highlighter(highlighter, NULL);
@@ -670,6 +602,7 @@ int main(int argc, char* argv[])
     char* input;
 
     while(true) {
+      std::string curDir = shell->GetCurrentDir();    // get the folder for the history, as the cmd may be a cd
       std::string input = readLine.ReadLine(shell->GetPrompt());   // ctrl-d returns NULL (as well as errors)
       try {
         // readLine.Printf("%s\n", input.c_str());
@@ -679,7 +612,7 @@ int main(int argc, char* argv[])
         } 
 
         if (input.length() > 0)  {
-          readLine.AddHistory(input, true);
+          readLine.AddHistory(input, curDir, true);
         }
       } catch (std::exception &e) {
         // catch and continue

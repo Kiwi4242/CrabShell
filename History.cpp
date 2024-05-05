@@ -12,6 +12,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#include <map>
 #include <chrono>
 using namespace std::chrono_literals;
 
@@ -41,7 +42,7 @@ ShellHistoryClass::ShellHistoryClass()
 {
 }
 
-const HistoryItem &ShellHistoryClass::Get(const unsigned int n) const
+const HistoryItemPtr &ShellHistoryClass::Get(const unsigned int n) const
 {
     if (n < 0 or n > history.size()) {
         throw std::out_of_range("Range error in History::Get()");
@@ -94,7 +95,14 @@ bool ShellHistoryClass::Load(const std::string &inFile)
                     return history.size() > 0;
                 }
             }
-            history.push_back(HistoryItem(entries[0], entries[1], entries[2]));
+            HistoryItemPtr item = std::make_shared<HistoryItem>(entries[0], entries[1], entries[2]);
+            history.push_back(item);
+            // historyMap[entries[0]] = item;
+            if (entries[2].size() > 0) {
+                folderMap[entries[2]].push_back(item);
+            } else {
+                noFolder.push_back(item);
+            }
         }
     }
     return true;
@@ -113,9 +121,17 @@ void ShellHistoryClass::Clear()
 
 
 constexpr auto t20{20ms};
-void ShellHistoryClass::Append(const std::string &c, const bool appendToFile)
+void ShellHistoryClass::Append(const std::string &c, const std::string &folder, 
+                               const std::string &t, const bool appendToFile)
 {
-    history.push_back(HistoryItem(c, "", ""));
+
+    HistoryItemPtr item = std::make_shared<HistoryItem>(c, t, folder);
+    history.push_back(item);
+    if (folder.size() > 0) {
+        folderMap[folder].push_back(item);
+    } else {
+        noFolder.push_back(item);
+    }
     if (appendToFile) {
         if (fileName.length() > 0) {
             // write a lock file to prevent other instances from writing
@@ -136,18 +152,14 @@ void ShellHistoryClass::Append(const std::string &c, const bool appendToFile)
                 }
             }
             if (noLock) {
-                const auto t2 = std::chrono::system_clock::to_time_t(t1);
-                char nowSt[128];
-                std::strftime(nowSt, 128, "%Y-%m-%d %H:%M:%S", std::localtime(&t2));
-                // std::string nowSt = std::put_time(std::localtime(&t2), "%F %T.\n");
 
                 std::ofstream lck(lckFile);
                 lck << "Locked\n";
                 std::ofstream ofs(fileName, std::ios::app);
                 if (ofs) {
                     ofs << "- Cmd: " << c << "\n";
-                    ofs << "  Date: '" << nowSt << "'\n";
-                    ofs << "  Folder: ''\n";
+                    ofs << "  Date: '" << t << "'\n";
+                    ofs << "  Folder: " << folder << "\n";
                 }
                 ofs.close();
                 lck.close();
@@ -155,6 +167,28 @@ void ShellHistoryClass::Append(const std::string &c, const bool appendToFile)
             }
         }
     }
+}
+
+
+std::vector<HistoryItemPtr> ShellHistoryClass::GetFolderItems(const std::string &folder)
+{
+    std::string st;
+    for (auto it : folderMap) {
+        st = it.first; 
+    }
+    auto item = folderMap.find(folder);
+    if (item != folderMap.end()) {
+        return item->second;
+    }
+    if (st == "42") {
+        return std::vector<HistoryItemPtr>();
+    }
+    return std::vector<HistoryItemPtr>();
+}
+
+const std::vector<HistoryItemPtr> &ShellHistoryClass::GetNoFolderItems() 
+{
+    return noFolder;
 }
 
 
