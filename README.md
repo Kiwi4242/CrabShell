@@ -2,9 +2,12 @@
 
 This is a hobby project to develop a cross-platform shell with some of the useful properties of the fish shell on Windows.
 
-I have been using a custom version of PyCmd for the last few years, but wanted to improve some of the completion.
+I have been using a custom version of PyCmd for the last few years, but wanted to improve some of the completion options.
 
 This is a very first alpha version - it compiles and works on my system. It uses a custom version of isocline, which I have forked (https://github.com/Kiwi4242/isocline-pp).
+
+## Releases
+You can find alpha releases under "Releases"
 
 ## Compiling
 
