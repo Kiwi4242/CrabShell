@@ -33,6 +33,7 @@ typedef std::shared_ptr<HistoryItem> HistoryItemPtr;
 class ShellHistoryClass {
 protected:
     std::vector<HistoryItemPtr> history;
+    std::unordered_map<std::string, int> itemMap;
     std::unordered_map<std::string, std::vector<HistoryItemPtr>> folderMap;
     std::vector<HistoryItemPtr> noFolder;
     // std::map<std::string, HistoryItemPtr> historyMap;

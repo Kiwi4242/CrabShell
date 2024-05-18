@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 namespace Utilities {
 
 
-#ifdef WIN32  
+#ifdef __WIN32__
   static const bool isWindows = true;
 #else
   static const bool isWindows = false;
@@ -29,6 +29,7 @@ namespace Utilities {
   class LogClass {
   protected:
     std::ofstream out;
+    std::string error;
     bool doLog;
 
   public:
@@ -39,8 +40,7 @@ namespace Utilities {
       }
 
   private:
-      LogClass() 
-      {
+      LogClass() {
         doLog = false;
       }
 
@@ -77,6 +77,17 @@ namespace Utilities {
       }
     }
 
+    void LogError(const std::string &msg) {
+      error = msg;
+      if (doLog) {
+        out << msg << "\n";
+      }
+    }
+
+    std::string GetError() const {
+      return error;
+    }
+
   };
 
 
@@ -90,6 +101,19 @@ namespace Utilities {
     LogClass::GetLog()->LogMessage(msg);
   }
 
+  void LogError(const std::string &msg) {
+    LogClass::GetLog()->LogError(msg);
+  }
+
+
+  bool HasError(std::string &msg) {
+    std::string st = LogClass::GetLog()->GetError();
+    if (st.length() > 0) {
+      msg = st;
+      return true;
+    }
+    return false;
+  }
 
   std::string GetConfigFolder()
   {
@@ -110,18 +134,24 @@ namespace Utilities {
 
   std::string GetHome()
   {
-    std::string home = GetEnvVar("HOME");
     std::string pathSep = std::string(1, Utilities::pathSep);
+    std::string home = GetEnvVar("HOME");
     if (home.length() == 0) {
       if (isWindows) {
-        // HOMEDRIVE and HOMEPATH
-        std::string homeDir = GetEnvVar("HOMEDRIVE");
-        std::string homePath = GetEnvVar("HOMEPATH");
-        if (homeDir.length() > 0) {
-          if (homePath.length() > 0) {
-            return homeDir + homePath;
+        // try userprofile
+        std::string profDir = GetEnvVar("USERPROFILE");
+        if (profDir.length() > 0) {
+          return profDir;
+        } else {
+          // HOMEDRIVE and HOMEPATH
+          std::string homeDir = GetEnvVar("HOMEDRIVE");
+          std::string homePath = GetEnvVar("HOMEPATH");
+          if (homeDir.length() > 0) {
+            if (homePath.length() > 0) {
+              return homeDir + homePath;
+            }
+            return homeDir;
           }
-          return homeDir;
         }
         return pathSep;   // set to root
       }
@@ -204,10 +234,22 @@ namespace Utilities {
   }
 
 
-  void SetCurrentDirectory(const std::string &d)
+  bool SetCurrentDirectory(const std::string &d)
   {
-    fs::path dirPath(d);
-    fs::current_path(dirPath);
+    try {
+      fs::path dirPath(d);
+      fs::current_path(dirPath);
+      return true;
+    } catch(const fs::filesystem_error &e) {
+      if (!fs::exists(d)) {
+        LogError("Error: Directory " + d + " does not exist");
+      } else {
+        LogError("Error: cannot change directory to: " + d);
+      }
+    } catch(const std::exception &e) {
+        LogError("Error: cannot change directory to: " + d);
+    }
+    return false;
   }
 
   std::string GetCurrentDirectory()

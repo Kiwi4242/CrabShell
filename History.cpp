@@ -69,11 +69,11 @@ bool ShellHistoryClass::Load(const std::string &inFile)
         return false;
     }
 
+    std::string keys[] = {"- Cmd: ", "Date: ", "Folder: "};
+    std::string entries[3];
     std::string line;
     while (std::getline(inp, line)) {
         // 3 records - Cmd, Date, Folder
-        std::string keys[] = {"- Cmd: ", "Date: ", "Folder: "};
-        std::string entries[3];
         if (line.find(keys[0]) != line.npos) {
             // have found record
             for (int i = 0; i < 3; i++) {
@@ -91,7 +91,7 @@ bool ShellHistoryClass::Load(const std::string &inFile)
                      }
                      entries[i] = st;
                 }
-                if (!std::getline(inp, line)) {
+                if (i < 2 and !std::getline(inp, line)) {
                     return history.size() > 0;
                 }
             }
@@ -120,19 +120,30 @@ void ShellHistoryClass::Clear()
 }
 
 
-constexpr auto t20{20ms};
-void ShellHistoryClass::Append(const std::string &c, const std::string &folder, 
-                               const std::string &t, const bool appendToFile)
+// constexpr auto t20{20ms};
+void ShellHistoryClass::Append(const std::string &cmd, const std::string &folder, 
+                               const std::string &tm, const bool appendToFile)
 {
+    HistoryItemPtr item = std::make_shared<HistoryItem>(cmd, tm, folder);
 
-    HistoryItemPtr item = std::make_shared<HistoryItem>(c, t, folder);
+    bool add = true;
+    // remove any old entries
+    if (itemMap.count(cmd) > 0) {
+        int ind = itemMap[cmd];
+        if (ind == history.size()-1) {
+            add = false;
+        }
+        history.erase(history.begin()+ind);
+    }
     history.push_back(item);
+    itemMap[cmd] = history.size() - 1;
+
     if (folder.size() > 0) {
         folderMap[folder].push_back(item);
     } else {
         noFolder.push_back(item);
     }
-    if (appendToFile) {
+    if (appendToFile and add) {
         if (fileName.length() > 0) {
             // write a lock file to prevent other instances from writing
             std::string lckFile = fileName + ".lck";
@@ -157,8 +168,8 @@ void ShellHistoryClass::Append(const std::string &c, const std::string &folder,
                 lck << "Locked\n";
                 std::ofstream ofs(fileName, std::ios::app);
                 if (ofs) {
-                    ofs << "- Cmd: " << c << "\n";
-                    ofs << "  Date: '" << t << "'\n";
+                    ofs << "- Cmd: " << cmd << "\n";
+                    ofs << "  Date: '" << tm << "'\n";
                     ofs << "  Folder: " << folder << "\n";
                 }
                 ofs.close();

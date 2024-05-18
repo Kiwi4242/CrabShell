@@ -23,6 +23,7 @@
 #include <filesystem>
 namespace fs = std::filesystem;
 #include <iostream>
+#include <sstream>
 #include <chrono>
 using namespace std::chrono_literals;
 
@@ -82,9 +83,9 @@ public:
   
   //  bool MSWSystem1(const std::string &cmd);
   bool MSWSystem(const std::string &cmd);
-  int ProcessCommand(const std::string &commandLineArg);
+  bool ProcessCommand(const std::string &commandLineArg);
 
-  int RunHooks(std::vector<std::string> &args);
+  bool RunHooks(std::vector<std::string> &args);
 
 };
 
@@ -231,12 +232,24 @@ int ReadLineClass::HistoryCount()
     return history.GetNoHistory();
 }
 
+
 std::string ReadLineClass::GetHistoryItem(const ssize_t n)
 {
   // return in reverse order
   int no = history.GetNoHistory();
-  if (n < no) {
-    return history.Get(no-1-n)->cmd;
+  int ind = n;
+  if (n < 0) {
+    ind = no + n;
+  }
+  if (ind == 0) {
+    return "";
+  }
+  if (ind <= no) {    // the call starts at 1
+    std::string st = history.Get(no-ind)->cmd;
+    std::ostringstream msg;
+    msg << "Returning item " << n << " " << ind << " " << no << " " << st;
+    Utilities::LogMessage(msg.str());
+    return st;
   }
   return "";
 }
@@ -315,11 +328,15 @@ bool ShellDataClass::DoCD(const std::string &d, const bool push)
 
   // strip any quotes from the directory as SetCurrentDirectory doesn't
   // like them
-  if (push) {
-    pushDirs.push_back(Utilities::GetCurrentDirectory());
-  }
+  std::string cur = Utilities::GetCurrentDirectory();
   Utilities::FixupPath(dir);
-  Utilities::SetCurrentDirectory(dir);
+  if (not Utilities::SetCurrentDirectory(dir)) {
+    return false;
+  }
+
+  if (push) {
+    pushDirs.push_back(cur);
+  }
 
   GetPaths();
 
@@ -339,10 +356,10 @@ bool ShellDataClass::PopDir()
 
 
 
-int ShellDataClass::RunHooks(std::vector<std::string> &args)
+bool ShellDataClass::RunHooks(std::vector<std::string> &args)
 {
   if (args.size() == 0) {
-    return 0;
+    return false;
   }
 
 
@@ -369,7 +386,7 @@ int ShellDataClass::RunHooks(std::vector<std::string> &args)
 }
 
 
-int ShellDataClass::ProcessCommand(const std::string &commandLineArg)
+bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
 {
   if (commandLineArg.empty()) 
     return 1;
@@ -386,8 +403,7 @@ int ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   
   // command of the form c:
   if (cmdLen == 2 && cmd[1] == ':') {
-    DoCD(cmd);
-    return 1;
+    return DoCD(cmd);
   }
 
   // update aliases
@@ -395,7 +411,7 @@ int ShellDataClass::ProcessCommand(const std::string &commandLineArg)
     args[0] = aliases[cmd];
   }
 
-  int res = RunHooks(args);
+  bool res = RunHooks(args);
   if (res) {
     return res;
   }
@@ -409,7 +425,7 @@ int ShellDataClass::ProcessCommand(const std::string &commandLineArg)
 
   std::system(cmdLine.c_str());
 
-  return 1;
+  return true;
 }
 
 
@@ -606,7 +622,7 @@ int main(int argc, char* argv[])
       std::string input = readLine.ReadLine(shell->GetPrompt());   // ctrl-d returns NULL (as well as errors)
       try {
         // readLine.Printf("%s\n", input.c_str());
-        shell->ProcessCommand(input);
+        bool res = shell->ProcessCommand(input);
         if (input == "exit") {
             break;
         } 
@@ -614,9 +630,20 @@ int main(int argc, char* argv[])
         if (input.length() > 0)  {
           readLine.AddHistory(input, curDir, true);
         }
+        if (not res) {
+          std::string err;
+          if (Utilities::HasError(err)) {
+            readLine.Printf(err);
+          }
+        }
       } catch (std::exception &e) {
         // catch and continue
-        readLine.Printf("Error: with command\n","");
+        std::string err;
+        if (Utilities::HasError(err)) {
+          readLine.Printf(err, "");
+        } else {
+          readLine.Printf("Error: with the command\n","");
+        }
       }
 
     }

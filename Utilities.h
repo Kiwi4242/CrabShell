@@ -34,7 +34,7 @@ namespace Utilities {
 
   std::string AbbrevPath(const std::string &path, const int maxLen);
 
-  void SetCurrentDirectory(const std::string &d);
+  bool SetCurrentDirectory(const std::string &d);
   std::string GetCurrentDirectory();
 
   bool ParseLine(const std::string &line, std::vector<std::string> &args, const bool stripQuotes);
@@ -48,5 +48,7 @@ namespace Utilities {
 
   void SetupLogging(const bool doLog);
   void LogMessage(const std::string &msg);
+  void LogError(const std::string &msg);
+  bool HasError(std::string &msg);
 
 }
