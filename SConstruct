@@ -8,6 +8,8 @@
 '''
 import os
 
+tools = {'win32': 'mingw', 'posix': 'default'}
+buildDirs = {'win32': 'build_mingw', 'posix': 'build_linux'}
 
 vars = Variables(None, ARGUMENTS)
 debugVar = BoolVariable("DEBUG", "Set to 1 to build a debug release", 0)
@@ -17,6 +19,9 @@ vars.AddVariables(debugVar)
 defEnv = DefaultEnvironment(variables=vars)
 
 debug = defEnv.get('DEBUG', 0)
+
+platform = defEnv['PLATFORM']
+
 
 if (debug):
     OPT = ['-g']
@@ -30,9 +35,13 @@ cppInc = [os.path.join(srcDir, 'isocline-pp/include')]
 ldLibs = [os.path.join(srcDir, 'isocline-pp/build_mingw')]
 libs = ['isocline']
 
-buildDir = 'build_mingw'
+if (platform == "win32"):
+    libs += ['shell32', 'kernel32', 'user32', 'shlwapi', 'ole32', 'uuid']
 
-env = Environment(tools=['mingw'], CPPPATH=cppInc, CPPFLAGS=OPT+DEFINES)
+buildDir = buildDirs[platform]
+
+env = Environment(tools=[tools[platform]], CPPPATH=cppInc, CPPFLAGS=OPT+DEFINES)
+
 
 ##################################################
 # Start of scons statements

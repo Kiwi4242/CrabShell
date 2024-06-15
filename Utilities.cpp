@@ -9,11 +9,18 @@
 
 
 #include <fstream>
+#include <iostream>
+#include <thread>
 #include <algorithm>
 #include <filesystem>
 namespace fs = std::filesystem;
 
-#include <isocline_pp.h>
+#include <chrono>
+using namespace std::chrono_literals;
+
+#include <algorithm>
+#include <cctype>
+
 #include "Utilities.h"
  
 namespace Utilities {
@@ -115,6 +122,11 @@ namespace Utilities {
     return false;
   }
 
+  bool IsWindows() {
+    return isWindows;
+  }
+
+
   std::string GetConfigFolder()
   {
       std::string home = Utilities::GetHome();
@@ -167,6 +179,7 @@ namespace Utilities {
       std::transform(st.begin(), st.end(), lower.begin(), ::tolower);
       return lower;
   }
+
 
   bool StartsWith(const std::string &mainStr, const std::string &startIn, const bool ignoreCase)
   {
@@ -432,7 +445,9 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
 
           // Add quotes if spaces in name
           if (name.find(" ") != name.npos) {
-            name = quote + name + quote;
+            prefLen = fileSt.size();
+            std::string prefix = searchDir.string() + pathSep;
+            name = quote + prefix + name + quote;
           }
           // check if a folder
           if (fs::is_directory(ent) and name.back() != pathSep) {
@@ -556,7 +571,48 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
 
   }
 
-}
+
+  FileLock::FileLock(const std::string &fullName)
+  {
+    fs::path fullPath(fullName);
+    std::string fileName = fullPath.filename().string();
+
+    fs::path configFolder(Utilities::GetConfigFolder());
+    fs::path lckFilePath = configFolder / (fileName + ".lck");
+    lckFile = lckFilePath.string();
+
+    hasLock = true;
+    std::chrono::high_resolution_clock clock;
+    constexpr auto t20{20ms};
+    auto t1 = clock.now();
+    while (fs::exists(lckFile)) {
+        std::this_thread::sleep_for(t20);
+        std::chrono::duration<double> timeSpan 
+            = std::chrono::duration_cast<std::chrono::duration<double>>(clock.now() - t1);
+        if (timeSpan.count() > 1.0) {
+            std::cout << "Waiting too long for file lock\n";
+            hasLock = false;
+            return;
+        }
+    }
+
+    std::ofstream lck(lckFile);
+    lck << "Locked\n";
+    lck.close();
+  }
+
+  FileLock::~FileLock()
+  {
+    fs::remove(lckFile);
+  }
+
+  bool FileLock::HasLock() const
+  {
+    return hasLock;  
+  }
+
+
+}  // end namespace
 
 
 #ifdef MAIN

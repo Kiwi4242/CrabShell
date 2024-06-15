@@ -32,19 +32,18 @@ typedef std::shared_ptr<HistoryItem> HistoryItemPtr;
 
 class ShellHistoryClass {
 protected:
-    std::vector<HistoryItemPtr> history;
-    std::unordered_map<std::string, int> itemMap;
-    std::unordered_map<std::string, std::vector<HistoryItemPtr>> folderMap;
-    std::vector<HistoryItemPtr> noFolder;
-    // std::map<std::string, HistoryItemPtr> historyMap;
+    std::vector<HistoryItemPtr> history;            // store all the history
+    std::unordered_map<std::string, std::vector<HistoryItemPtr>> folderMap;    // map commands per folder
+    std::vector<HistoryItemPtr> noFolderMap;                                   // any commands without a folder
     std::string fileName;
 
+    int RevFind(const std::string &cmd, const int beg, const int end);
 public:
     ShellHistoryClass();
 
     bool Load(const std::string &inFile);
 
-    bool GetMatch(const std::string &pref);
+    // bool GetMatch(const std::string &pref);
 
     unsigned int GetNoHistory() const {
         return history.size();

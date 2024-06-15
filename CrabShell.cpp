@@ -27,6 +27,18 @@ namespace fs = std::filesystem;
 #include <chrono>
 using namespace std::chrono_literals;
 
+#ifdef __WIN32__
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <objbase.h>
+
+# ifdef GetCurrentDirectory
+# undef GetCurrentDirectory
+# undef SetCurrentDirectory
+# endif
+
+#endif
+
 #include <isocline_pp.h>
 
 #include "History.h"
@@ -48,6 +60,7 @@ protected:
   int maxPrompt;
 
   fs::path configFolder;
+  int pid;
   bool doLog;  
 
   std::map<std::string, std::string> aliases;
@@ -81,8 +94,7 @@ public:
   // Update path information
   int GetPaths();
   
-  //  bool MSWSystem1(const std::string &cmd);
-  bool MSWSystem(const std::string &cmd);
+  bool MSWSystem(const std::vector<std::string> &args);
   bool ProcessCommand(const std::string &commandLineArg);
 
   bool RunHooks(std::vector<std::string> &args);
@@ -138,6 +150,7 @@ ReadLineClass::ReadLineClass(std::shared_ptr<ShellDataClass> sh) : IsoclinePP(),
 
 bool ReadLineClass::Hint(const std::string &inp, CompletionItem &hint, const bool atEnd)
 {
+    // return hint for potential completion
     hint.comp = "";
     hint.delBefore = 0;
 
@@ -180,6 +193,7 @@ bool ReadLineClass::Hint(const std::string &inp, CompletionItem &hint, const boo
 
 bool ReadLineClass::Completer(const std::string &inp, std::vector<CompletionItem> &completions)
 {
+  // complete file name
   try {
     Utilities::GetFileMatches(inp, completions);
 
@@ -215,15 +229,6 @@ void ReadLineClass::ReadHistory(const std::string &name)
 
    history.Clear();
    history.Load(inPath.string());
-
-#ifdef OLD
-   std::vector<std::string> hisItems;
-   for (unsigned int i = 0; i < history.GetNoHistory(); i++) {
-      const HistoryItemPtr &it = history.Get(i);
-      hisItems.push_back(it->cmd);
-    }
-    AddHistory(hisItems);
-#endif    
 }
 
 
@@ -247,7 +252,7 @@ std::string ReadLineClass::GetHistoryItem(const ssize_t n)
   if (ind <= no) {    // the call starts at 1
     std::string st = history.Get(no-ind)->cmd;
     std::ostringstream msg;
-    msg << "Returning item " << n << " " << ind << " " << no << " " << st;
+    msg << "Returning history item " << n << " " << ind << " " << no << " " << st;
     Utilities::LogMessage(msg.str());
     return st;
   }
@@ -377,13 +382,48 @@ bool ShellDataClass::RunHooks(std::vector<std::string> &args)
   }
 #endif
 
-  std::map<std::string, HookFunc>::iterator iter = hooks.find(args[0]);
+  // hooks should be lowercase
+  std::string cmd = Utilities::ToLower(args[0]);
+  std::map<std::string, HookFunc>::iterator iter = hooks.find(cmd);
   if (iter != hooks.end()) {
     return (iter->second)(args, *this);
   }
   return 0;
 
 }
+
+
+#ifdef __WIN32__
+bool ShellDataClass::MSWSystem(const std::vector<std::string> &cmdArgs)
+{
+    SHELLEXECUTEINFO ShExecInfo;
+
+    if (cmdArgs.size() == 0) {
+        return false;
+    }
+
+    TCHAR args[MAX_PATH];
+    args[0] = 0;
+    for (int i = 1; i < cmdArgs.size(); i++)  {
+        strcat(args, cmdArgs[i].c_str());
+        strcat(args, " ");
+    }
+
+    ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFO);
+    ShExecInfo.fMask = SEE_MASK_NOASYNC |
+                      SEE_MASK_FLAG_NO_UI |
+                      SEE_MASK_NO_CONSOLE;
+    ShExecInfo.hwnd = NULL;
+    ShExecInfo.lpVerb = NULL;
+    ShExecInfo.lpFile = cmdArgs[0].c_str();
+    ShExecInfo.lpParameters = args;
+    ShExecInfo.lpDirectory = NULL;
+    ShExecInfo.nShow = SW_SHOWDEFAULT;
+    ShExecInfo.hInstApp = NULL;
+
+    return ShellExecuteEx(&ShExecInfo);
+}
+#endif
 
 
 bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
@@ -394,6 +434,8 @@ bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   std::vector<std::string> args;
   std::string lastTok;
   
+  Utilities::LogMessage("Running command " + commandLineArg);
+
   bool lastBlank = Utilities::ParseLine(commandLineArg, args, false);
   std::string cmd = args[0];
 
@@ -416,14 +458,18 @@ bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
     return res;
   }
 
-  // Reconstruct the command line
-  std::string cmdLine;
-  for (int i = 0; i < args.size()-1; i++) {
-    cmdLine += args[i] + " ";
-  }
-  cmdLine += args.back();
+  if (false and Utilities::IsWindows()) {
+    MSWSystem(args);
+  } else {
+    // Reconstruct the command line
+    std::string cmdLine;
+    for (int i = 0; i < args.size()-1; i++) {
+      cmdLine += args[i] + " ";
+    }
+    cmdLine += args.back();
 
-  std::system(cmdLine.c_str());
+    std::system(cmdLine.c_str());
+  }
 
   return true;
 }
@@ -604,6 +650,13 @@ int main(int argc, char* argv[])
     
     // enable history; use a NULL filename to not persist history to disk
     readLine.ReadHistory("history.dat");
+
+    if (readLine.HistoryCount() > 16*1024) {
+      std::ostringstream msg;
+      msg << "[bold][blue]Have " << readLine.HistoryCount() << " history items. Suggest running CleanHistory[/][/]\n\n";
+      readLine.Print(msg.str());
+    }
+
 
     // enable syntax highlighting with a highlight function
     // ic_set_default_highlighter(highlighter, NULL);

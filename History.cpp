@@ -11,8 +11,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <thread>
 #include <map>
+#include <algorithm>
 #include <chrono>
 using namespace std::chrono_literals;
 
@@ -22,6 +22,8 @@ namespace fs = std::filesystem;
 #include <ctime>
 
 #include "History.h"
+#include "Utilities.h"
+
 
 HistoryItem::HistoryItem(const std::string &c, const std::string &d, const std::string &f)
 {
@@ -42,6 +44,7 @@ ShellHistoryClass::ShellHistoryClass()
 {
 }
 
+
 const HistoryItemPtr &ShellHistoryClass::Get(const unsigned int n) const
 {
     if (n < 0 or n > history.size()) {
@@ -49,6 +52,7 @@ const HistoryItemPtr &ShellHistoryClass::Get(const unsigned int n) const
     }
     return history[n];
 }
+
 
 bool ShellHistoryClass::Load(const std::string &inFile)
 {
@@ -101,22 +105,42 @@ bool ShellHistoryClass::Load(const std::string &inFile)
             if (entries[2].size() > 0) {
                 folderMap[entries[2]].push_back(item);
             } else {
-                noFolder.push_back(item);
+                noFolderMap.push_back(item);
             }
         }
     }
+
+    std::ostringstream msg;
+    msg << "Read history with " << GetNoHistory() << " items\n";
+    Utilities::LogMessage(msg.str());
+
     return true;
 }
 
+/*
 bool ShellHistoryClass::GetMatch(const std::string &pref)
 {
     return true;
 }
-
+*/
 
 void ShellHistoryClass::Clear()
 {
     history.clear();
+}
+
+typedef std::vector<HistoryItemPtr>::iterator HistIter;
+int ShellHistoryClass::RevFind(const std::string &cmd, const int beg, const int end)
+{
+    // Search from fin to begin for cmd
+    HistIter start = history.begin() + beg;
+    HistIter fin = history.end() + end;
+    for (int i = end; i >= beg; i--) {
+        if (history[i]->cmd == cmd) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 
@@ -127,45 +151,60 @@ void ShellHistoryClass::Append(const std::string &cmd, const std::string &folder
     HistoryItemPtr item = std::make_shared<HistoryItem>(cmd, tm, folder);
 
     bool add = true;
-    // remove any old entries
-    if (itemMap.count(cmd) > 0) {
-        int ind = itemMap[cmd];
-        if (ind == history.size()-1) {
+    // remove any old entries in the last 50 
+    int noFind = std::min(50, int(history.size()));
+    int startInd = history.size() - noFind;
+
+    int fin = history.size()-1;
+    auto it = RevFind(cmd, startInd, fin);
+    if (it >= 0) {
+        if (it == fin) {
             add = false;
+        } else {
+            std::ostringstream msg;
+            msg << "Erasing history item " << history[it]->cmd;
+            Utilities::LogMessage(msg.str());
+            history.erase(history.begin()+it);
         }
-        history.erase(history.begin()+ind);
     }
-    history.push_back(item);
-    itemMap[cmd] = history.size() - 1;
+    if (add) {
+        history.push_back(item);
+    }
 
+    // Assign to a folder
     if (folder.size() > 0) {
-        folderMap[folder].push_back(item);
-    } else {
-        noFolder.push_back(item);
-    }
-    if (appendToFile and add) {
-        if (fileName.length() > 0) {
-            // write a lock file to prevent other instances from writing
-            std::string lckFile = fileName + ".lck";
-
-            bool noLock = true;
-            std::chrono::high_resolution_clock clock;
-            auto t1 = clock.now();
-            while (fs::exists(lckFile)) {
-                constexpr auto t20{20ms};
-                std::this_thread::sleep_for(t20);
-                std::chrono::duration<double> timeSpan 
-                    = std::chrono::duration_cast<std::chrono::duration<double>>(clock.now() - t1);
-                if (timeSpan.count() > 1.0) {
-                    std::cout << "Waiting too long for history file lock, not adding to history\n";
-                    noLock = false;
+        if (folderMap.count(folder) > 0) {
+            // check if already present, just the last 20 entries
+            std::vector<HistoryItemPtr> &foldVec = folderMap[folder];
+            int no = foldVec.size();
+            int start = std::max(0, no-20);
+            bool add = true;
+            for(int i = no-1; i >= start; i--) {
+                if (foldVec[i]->cmd == cmd) {
+                    if (i == no-1) {
+                        add = false;
+                    } else {
+                        foldVec.erase(foldVec.begin()+i);
+                    }
                     break;
                 }
             }
-            if (noLock) {
+        }
+        if (add) {
+            folderMap[folder].push_back(item);
+        }
+    } else {
+        // this shouldn't be called here
+        noFolderMap.push_back(item);
+    }
 
-                std::ofstream lck(lckFile);
-                lck << "Locked\n";
+    if (appendToFile and add) {
+        if (fileName.length() > 0) {
+            // write a lock file to prevent other instances from writing
+
+            Utilities::FileLock lck(fileName);
+            if (lck.HasLock()) {
+
                 std::ofstream ofs(fileName, std::ios::app);
                 if (ofs) {
                     ofs << "- Cmd: " << cmd << "\n";
@@ -173,8 +212,6 @@ void ShellHistoryClass::Append(const std::string &cmd, const std::string &folder
                     ofs << "  Folder: " << folder << "\n";
                 }
                 ofs.close();
-                lck.close();
-                fs::remove(lckFile);
             }
         }
     }
@@ -191,15 +228,13 @@ std::vector<HistoryItemPtr> ShellHistoryClass::GetFolderItems(const std::string 
     if (item != folderMap.end()) {
         return item->second;
     }
-    if (st == "42") {
-        return std::vector<HistoryItemPtr>();
-    }
     return std::vector<HistoryItemPtr>();
 }
 
+
 const std::vector<HistoryItemPtr> &ShellHistoryClass::GetNoFolderItems() 
 {
-    return noFolder;
+    return noFolderMap;
 }
 
 

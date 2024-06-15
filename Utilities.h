@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-class CompletionItem;
+#include <isocline_pp.h>
 
 
 namespace Utilities {
@@ -23,9 +23,13 @@ namespace Utilities {
   static const char pathSep = '/';
 #endif
 
-
-
-
+  struct CompletionInfo {
+    CompletionItem item;
+    bool NeedsQuotes;
+  };
+  
+  bool IsWindows();
+  
   void SplitString(const std::string &st, const std::string &sep, std::vector<std::string> &res);
   bool StartsWith(const std::string &mainStr, const std::string &startIn, const bool ignoreCase=false);
 
@@ -42,6 +46,8 @@ namespace Utilities {
   bool FixupPath(std::string &path);
   bool StripString(std::string &cmd);
 
+  std::string ToLower(const std::string &st);
+
   std::string GetEnvVar(const std::string &var);
   std::string GetHome();
   std::string GetConfigFolder();
@@ -50,5 +56,16 @@ namespace Utilities {
   void LogMessage(const std::string &msg);
   void LogError(const std::string &msg);
   bool HasError(std::string &msg);
+
+
+  class FileLock {
+  protected:
+    bool hasLock;
+    std::string lckFile;
+  public:
+    FileLock(const std::string &fileName);
+    ~FileLock();
+    bool HasLock() const;
+  };
 
 }
