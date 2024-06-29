@@ -58,6 +58,14 @@ bool ShellHistoryClass::Load(const std::string &inFile)
 {
     fileName = inFile;
 
+    if (not Utilities::FileExists(inFile)) {
+        std::ofstream ofs(inFile);
+        if (ofs) {
+            ofs << "History:\n";
+        }
+        ofs.close();
+    }
+
     // load the history from a yaml file. The format is simple so just use a custom parser
     std::ifstream inp(inFile);
     // search start - "History:"

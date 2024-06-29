@@ -32,6 +32,7 @@ using namespace std::chrono_literals;
 #include <shlwapi.h>
 #include <objbase.h>
 
+// break some of the Utilities routines
 # ifdef GetCurrentDirectory
 # undef GetCurrentDirectory
 # undef SetCurrentDirectory
@@ -41,65 +42,19 @@ using namespace std::chrono_literals;
 
 #include <isocline_pp.h>
 
+#include "ShellData.h"
 #include "History.h"
 #include "Utilities.h"
 #include "Config.h"
 
+#define USELUA
+#ifdef USELUA
+#  include "LuaInterface.h"
+#endif
+
+
+// need to get and set environment variables
 extern char ** environ;
-
-
-class ShellDataClass {
-protected:
-
-  std::string currentDir;    
-  std::string root;
-
-  std::vector<std::string> pushDirs;
-
-  std::string currentPrompt;
-  int maxPrompt;
-
-  fs::path configFolder;
-  int pid;
-  bool doLog;  
-
-  std::map<std::string, std::string> aliases;
-  std::string startDir;
-
-  typedef bool (*HookFunc)(const std::vector<std::string> &args, ShellDataClass &shell);
-  std::map<std::string, HookFunc> hooks;
-
-public:
-  ShellDataClass(bool useLog=false) ;
-  
-  ~ShellDataClass() {
-    // if (log)
-    //   log->close();
-  }
-
-
-  bool DoCD(const std::string &dir, const bool push=false);
-
-  bool PopDir();
-  
-  int SetDrive(const char d);
-  
-  // Get the drive number corresponding to a letter
-  static int GetDriveNo(const char d);
-
-  const std::string &GetCurrentDir() const {return currentDir;}
-
-  const std::string GetPrompt();
-
-  // Update path information
-  int GetPaths();
-  
-  bool MSWSystem(const std::vector<std::string> &args);
-  bool ProcessCommand(const std::string &commandLineArg);
-
-  bool RunHooks(std::vector<std::string> &args);
-
-};
 
 
 class ReadLineClass : public IsoclinePP {
@@ -360,6 +315,11 @@ bool ShellDataClass::PopDir()
 }
 
 
+void ShellDataClass::AddAlias(const std::string &alias, const std::string &cmd)
+{
+  aliases[alias] = cmd;
+}
+
 
 bool ShellDataClass::RunHooks(std::vector<std::string> &args)
 {
@@ -367,6 +327,11 @@ bool ShellDataClass::RunHooks(std::vector<std::string> &args)
     return false;
   }
 
+
+  // run any lua functions
+  if (lua->RunCommand(args)) {
+    return true;
+  }
 
 #ifdef TODO
   // run any function in the cln file
@@ -431,45 +396,48 @@ bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   if (commandLineArg.empty()) 
     return 1;
   
-  std::vector<std::string> args;
-  std::string lastTok;
+  // std::vector<std::string> args;
   
   Utilities::LogMessage("Running command " + commandLineArg);
 
-  bool lastBlank = Utilities::ParseLine(commandLineArg, args, false);
-  std::string cmd = args[0];
+  Utilities::CmdClass cmds;
+  // bool lastBlank = Utilities::ParseLine(commandLineArg, args, false);
+  cmds.ParseLine(commandLineArg, false);
 
-  Utilities::StripString(cmd);
+  if (cmds.type == Utilities::CmdClass::PlainCmd) {
+    // at the moment deal with pipes or redirects using the system command
+    
+    std::string cmd = cmds.GetArg(0);
 
-  unsigned cmdLen = cmd.length();
-  
-  // command of the form c:
-  if (cmdLen == 2 && cmd[1] == ':') {
-    return DoCD(cmd);
-  }
+    Utilities::StripString(cmd);
 
-  // update aliases
-  if (aliases.count(cmd) > 0) {
-    args[0] = aliases[cmd];
-  }
-
-  bool res = RunHooks(args);
-  if (res) {
-    return res;
-  }
-
-  if (false and Utilities::IsWindows()) {
-    MSWSystem(args);
-  } else {
-    // Reconstruct the command line
-    std::string cmdLine;
-    for (int i = 0; i < args.size()-1; i++) {
-      cmdLine += args[i] + " ";
+    unsigned cmdLen = cmd.length();
+    
+    // command of the form c:
+    if (cmdLen == 2 && cmd[1] == ':') {
+      return DoCD(cmd);
     }
-    cmdLine += args.back();
 
-    std::system(cmdLine.c_str());
+    // update aliases
+    if (aliases.count(cmd) > 0) {
+      cmds.SetArg(0, aliases[cmd]);
+    }
+
+    bool res = RunHooks(cmds.tokens);
+    if (res) {
+      return res;
+    }
   }
+
+  // Reconstruct the command line - potoentially with alias
+  std::string cmdLine;
+  std::vector<std::string> &args = cmds.tokens;
+  for (int i = 0; i < args.size()-1; i++) {
+    cmdLine += args[i] + " ";
+  }
+  cmdLine += args.back();
+
+  std::system(cmdLine.c_str());
 
   return true;
 }
@@ -569,7 +537,7 @@ namespace ShellFuncs {
 }
 
 
-ShellDataClass::ShellDataClass(bool useLog) 
+ShellDataClass::ShellDataClass(const bool useLog, const std::string &localConfig) 
 {
 
   configFolder = Utilities::GetConfigFolder();
@@ -584,8 +552,20 @@ ShellDataClass::ShellDataClass(bool useLog)
   hooks["set"] = &ShellFuncs::SetEnv;
   maxPrompt = 25;
 
-  std::string configFile = (configFolder / "Config.dat").string();
+  std::string configFile;
+  if (localConfig.size() > 0) {
+    configFile = localConfig;
+  } else {
+    configFile = (configFolder / "Config.dat").string();
+  }
 
+
+#ifdef USELUA
+  lua = new LuaInterface(this);
+  lua->LoadFile(configFile);
+  lua->LoadPlugins();
+
+#else  
   ConfigMap configData;
   if (LoadConfig(configFile, configData)) {
     if (configData.count("Aliases") > 0) {
@@ -604,7 +584,17 @@ ShellDataClass::ShellDataClass(bool useLog)
       }
     }
   }
+#endif
+
   GetPaths();
+}
+
+
+ShellDataClass::~ShellDataClass()
+{
+  if (lua != nullptr) {
+    delete lua;
+  }
 }
 
 
@@ -624,16 +614,39 @@ int main(int argc, char* argv[])
   // check args
   bool doLog = false;
 
-  for (int i = 1; i < argc; i++) {
-    if (std::string(argv[i]) == "-l") {
+  bool err = false;
+
+  int i = 1;
+  while (i < argc) {
+    std::string arg(argv[i]);
+    if (arg == "-l") {
       doLog = true;
+    } else if (arg == "-c") {
+      if (i+1 < argc) {
+        std::string configFolder = argv[i+1];
+        Utilities::SetConfigFolder(configFolder);
+        i++;
+      } else {
+        err = true;
+      }
+    } else {
+      std::cerr << "Unknown argument " << arg << "\n";
+      err = true;
     }
+    i++;
+  }
+
+  if (err) {
+    std::cerr << "Usage: CrabShell [-l] [-c configFile]\n";
+    std::cerr << "   -l: write information to log\n";
+    std::cerr << "   -c: alternative configuration location\n";
+    return 1;
   }
 
   Utilities::SetupLogging(doLog);
 
   try {
-    std::shared_ptr<ShellDataClass> shell = std::make_shared<ShellDataClass>(doLog);
+    std::shared_ptr<ShellDataClass> shell = std::make_shared<ShellDataClass>(doLog, "");
     ReadLineClass readLine(shell);
 
     setlocale(LC_ALL,"C.UTF-8");  // we use utf-8 in this example
@@ -656,7 +669,6 @@ int main(int argc, char* argv[])
       msg << "[bold][blue]Have " << readLine.HistoryCount() << " history items. Suggest running CleanHistory[/][/]\n\n";
       readLine.Print(msg.str());
     }
-
 
     // enable syntax highlighting with a highlight function
     // ic_set_default_highlighter(highlighter, NULL);
@@ -693,9 +705,9 @@ int main(int argc, char* argv[])
         // catch and continue
         std::string err;
         if (Utilities::HasError(err)) {
-          readLine.Printf(err, "");
+          readLine.Print(err);
         } else {
-          readLine.Printf("Error: with the command\n","");
+          readLine.Print("Error: with the command\n");
         }
       }
 

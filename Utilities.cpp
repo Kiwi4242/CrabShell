@@ -32,6 +32,7 @@ namespace Utilities {
   static const bool isWindows = false;
 #endif
 
+  static std::string customConfigFolder;
 
   class LogClass {
   protected:
@@ -127,11 +128,19 @@ namespace Utilities {
   }
 
 
+  void SetConfigFolder(const std::string &fld)
+  {
+      customConfigFolder = fld;
+  }
+
   std::string GetConfigFolder()
   {
-      std::string home = Utilities::GetHome();
-      fs::path p = fs::path(home) / ".crabshell";
-      return p.string();
+    if (customConfigFolder.size() > 0) {
+      return customConfigFolder;
+    }
+    std::string home = Utilities::GetHome();
+    fs::path p = fs::path(home) / ".crabshell";
+    return p.string();
   }
 
 
@@ -247,6 +256,11 @@ namespace Utilities {
   }
 
 
+  bool FileExists(const std::string &f)
+  {
+      return fs::exists(f);
+  }
+
   bool SetCurrentDirectory(const std::string &d)
   {
     try {
@@ -321,7 +335,7 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
 
 
 
-  bool ParseLine(const std::string &line, std::vector<std::string> &tokens, const bool stripQuotes)
+  bool ParseLine_nu(const std::string &line, std::vector<std::string> &tokens, const bool stripQuotes)
   {
 
       std::stringstream ss(line);
@@ -371,11 +385,13 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
   }
 
 
+
   bool GetFileMatches(const std::string &line, std::vector<CompletionItem> &matches)
   {
 
-    std::vector<std::string> args;
-    bool lastBlank = ParseLine(line, args, true);
+    CmdClass cmds;
+    bool lastBlank = cmds.ParseLine(line, true);
+    std::vector<std::string> &args = cmds.tokens;
 
     matches.clear();
 
@@ -611,6 +627,138 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
     return hasLock;  
   }
 
+
+ CmdClass::CmdClass() 
+ {
+    cmdToks[1] = "|"; cmdToks[2] = ">";
+    type = PlainCmd;
+ }
+
+
+  bool CmdClass::ParseTokens(const std::vector<std::string> &toks, const int tokInd)
+  {
+    // parse line into  cmd arg <tok> right
+    std::string tok = cmdToks[tokInd];
+
+    bool hasTok = false;
+    std::vector<std::string> preToks;
+    std::vector<std::string> postToks;
+
+    for (auto it=toks.begin(); it!=toks.end(); it++) {
+        if (*it == tok) {
+            hasTok = true;
+            type = CmdType(tokInd);
+        } else if (hasTok) {
+            postToks.push_back(*it);
+        } else {
+            preToks.push_back(*it);
+        }
+    }
+
+    if (tokInd > 1) {
+        if (hasTok) {
+            preCmd = std::make_shared<CmdClass>();
+            preCmd->ParseTokens(preToks, tokInd-1);
+            postCmd = std::make_shared<CmdClass>();
+            postCmd->ParseTokens(postToks, tokInd);
+        } else {
+            tokens = preToks;
+        }
+    } else {
+        tokens = preToks;
+    }
+
+    return true;
+  }
+
+
+  void CmdClass::Print(std::ostream &out)
+  {
+    out << "Type: " << type << "\n";
+    if (type == PlainCmd) {
+        for (int i = 0; i < tokens.size(); i++) {
+            out << tokens[i] << " ";
+        }
+        out << "\n";
+    } else {
+        preCmd->Print(out);
+        postCmd->Print(out);
+    }
+
+  }
+
+
+  bool CmdClass::ParseLine(const std::string &line, const bool stripQuotes)
+  {
+      // parse line into tokens, returns true if the last character is a blank
+      // the tokens honor quotes
+      // if stripQuotes then remove quotes
+
+      std::stringstream ss(line);
+      std::string token;
+      char delim = ' ';
+      bool inQuotes = false;
+
+
+      bool lastBlank = false;
+      std::string whiteSpace(" \t");
+
+      // find last non-whitespace
+      size_t lastPos = line.find_last_not_of(whiteSpace);
+      if (lastPos == line.npos) {
+          // no non-whitespace
+          return true;
+      }
+      lastBlank = lastPos < line.length()-1;
+
+      std::vector<std::string> stToks;
+      while (std::getline(ss, token, delim)) {
+          size_t quotPos, lastPos;
+          // remove all quotes
+          bool inQuotes2 = inQuotes;
+          lastPos = 0;
+          while ((quotPos = token.find('"', lastPos)) != std::string::npos) {
+            if (stripQuotes) {
+              token.erase(quotPos, 1);
+            } else {
+              lastPos = quotPos + 1;
+            }
+            inQuotes2 = !inQuotes2;
+          }
+
+          if (!inQuotes) {
+              stToks.push_back(token);
+          } else {
+              stToks.back() += delim + token;
+          }
+
+          inQuotes = inQuotes2;
+          // if (token.find('"') != std::string::npos) {
+          //     inQuotes = !inQuotes;
+          // }
+      }
+
+      // have the tokens so identify type
+      ParseTokens(stToks, CmdClass::Redirection);
+
+      return lastBlank;
+  }
+
+
+  int CmdClass::GetNoArgs() const
+  {
+    return tokens.size();
+  }
+
+  std::string CmdClass::GetArg(const int n) const
+  {
+    return tokens[n];
+  }
+
+  void CmdClass::SetArg(const int n, const std::string &c)
+  {
+    tokens[n] = c;
+  }
 
 }  // end namespace
 

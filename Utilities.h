@@ -11,6 +11,7 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 
 #include <isocline_pp.h>
 
@@ -41,8 +42,6 @@ namespace Utilities {
   bool SetCurrentDirectory(const std::string &d);
   std::string GetCurrentDirectory();
 
-  bool ParseLine(const std::string &line, std::vector<std::string> &args, const bool stripQuotes);
-  
   bool FixupPath(std::string &path);
   bool StripString(std::string &cmd);
 
@@ -50,13 +49,52 @@ namespace Utilities {
 
   std::string GetEnvVar(const std::string &var);
   std::string GetHome();
+
+  void SetConfigFolder(const std::string &fld);
   std::string GetConfigFolder();
+
+  bool FileExists(const std::string &f);
 
   void SetupLogging(const bool doLog);
   void LogMessage(const std::string &msg);
   void LogError(const std::string &msg);
   bool HasError(std::string &msg);
 
+
+  // bool ParseLine(const std::string &line, std::vector<std::string> &args, const bool stripQuotes);
+  
+  class CmdClass {
+      // class to store the elements of a command line
+      // Simple:      "jed fred.txt"
+      // Redirection: "echo python PlotNSP.py > plotP.bat"
+      // Pipes:       "type fred.txt | grep hello"
+
+  protected:
+      bool ParseTokens(const std::vector<std::string> &toks, const int tok);
+      std::string cmdToks[3];
+
+  public:
+      enum CmdType {
+          PlainCmd,
+          Pipe,
+          Redirection
+      };
+
+      CmdClass();
+
+      CmdType type;
+      std::shared_ptr<CmdClass> preCmd;
+      std::shared_ptr<CmdClass> postCmd;
+      std::vector<std::string> tokens;
+
+      bool ParseLine(const std::string &line, const bool stripQuotes);
+
+      int GetNoArgs() const;
+      std::string GetArg(const int n) const;
+      void SetArg(const int n, const std::string &c);
+
+      void Print(std::ostream &out);
+  };
 
   class FileLock {
   protected:

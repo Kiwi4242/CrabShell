@@ -3,25 +3,27 @@
 
 #include <string>
 #include <vector>
-
+#include <memory>
 
 class lua_State;
-
-// Singleton class for connecting with Lua
+class ShellDataClass;
 
 class LuaInterface {
 protected:        
     lua_State *L;
-    std::vector<std::string> regFuncs;
+    std::vector<std::string> plugins;
+
 public:
-    LuaInterface();
+    LuaInterface(ShellDataClass *sh);
     bool LoadFile(const std::string &f);
-    bool RunCommand(const std::string &cmd);   // , const std::vector<std::string> &args);
+    bool RunCommand(const std::vector<std::string> &args); 
 
-   static LuaInterface *GetLua();
+    bool LoadPlugins();
 
-   void AddFunc(const std::string &f) {
-    regFuncs.push_back(f);
-   }
+    ShellDataClass *shell;
+
+    // void AddFunc(const std::string &f) {
+    //     regFuncs.push_back(f);
+    // }
 };
 

@@ -1,0 +1,9 @@
+-- Configuration for CrabShell
+-- AddAlias to add aliases
+-- DoCD to set working folder
+
+AddAlias('rm', 'del /p')
+AddAlias('dirt', 'dir /od')
+
+DoCD('Testing')
+
