@@ -6,6 +6,8 @@ I have been using a custom version of PyCmd for the last few years, but wanted t
 
 This is a very first alpha version - it compiles and works on my system. It uses a custom version of isocline, which I have forked (https://github.com/Kiwi4242/isocline-pp).
 
+![](https://github.com/Kiwi4242/CrabShell/blob/main/Install/ScreenShot.gif)
+
 ## Releases
 You can find alpha releases under "Releases"
 
