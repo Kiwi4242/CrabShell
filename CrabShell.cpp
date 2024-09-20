@@ -154,7 +154,10 @@ bool ReadLineClass::Completer(const std::string &inp, std::vector<CompletionItem
 
     Utilities::LogMessage("Completions for " + inp);
     for (size_t i = 0; i < completions.size(); i++) {
-      Utilities::LogMessage("  " + completions[i].comp);
+      const CompletionItem &cmp = completions[i];
+      std::ostringstream msg;
+      msg << "\t" << cmp.comp << " " << cmp.delBefore;
+      Utilities::LogMessage(msg.str());
     }
   } catch (std::exception &e) {
   }

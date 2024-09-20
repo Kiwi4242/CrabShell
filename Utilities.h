@@ -83,9 +83,10 @@ namespace Utilities {
       CmdClass();
 
       CmdType type;
-      std::shared_ptr<CmdClass> preCmd;
-      std::shared_ptr<CmdClass> postCmd;
-      std::vector<std::string> tokens;
+      std::shared_ptr<CmdClass> preCmd;    // before a > or |
+      std::shared_ptr<CmdClass> postCmd;   // after a > or |
+      std::vector<std::string> tokens;     // broken into tokens
+      int numQuotes;                        // number of quotes in line
 
       bool ParseLine(const std::string &line, const bool stripQuotes);
 
