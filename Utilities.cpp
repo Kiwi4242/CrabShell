@@ -386,7 +386,7 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
 
 
 
-  bool GetFileMatches(const std::string &line, std::vector<CompletionItem> &matches)
+  bool GetFileMatches(const std::string &line, std::vector<CompletionItem> &matches, int &startPos)
   {
 
     CmdClass cmds;
@@ -399,6 +399,8 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
     if (lastBlank > 0) {
       args.pop_back();
     }
+
+    startPos = line.rfind(fileSt);
 
     bool ignoreCase = isWindows;
     if (isWindows) {
@@ -414,17 +416,20 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
     fs::path searchDir;
     std::string searchName;
 
-    // first remove the last entry - do we have anything left
     fs::path fullPath(fileSt);
-    // remove filename
+
+    // split string
     fs::path pathNoName = fullPath.parent_path();
     fs::path fName = fullPath.filename();
+
+    fs::path relPath;
+    bool useRelPath = false;
 
     std::string prepend;
     int replaceLen = 0;
     if (pathNoName.empty()) {
       // just a file name, so search current dir
-      searchDir = fs::current_path();
+      searchDir = ".";   // fs::current_path();
       searchName = fileSt;
     } else {
       int tdPos;
@@ -445,6 +450,15 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
       }
       searchDir = pathNoName;
       searchName = fullPath.filename().string();
+      useRelPath = true;
+      relPath = fs::relative(searchDir, GetCurrentDirectory());
+      if (relPath.string().find("..") == std::string::npos) {
+        // have no .. in path, so it is a full path. Add the root is there
+        relPath = searchDir;
+      }
+      if (relPath.empty() || relPath == ".") {
+        useRelPath = false;
+      }
     }
 
     LogMessage("Searching for " + searchName + " in " + searchDir.string());
@@ -459,12 +473,6 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
         if (lastBlank or searchLen == 0 or StartsWith(name, searchName, ignoreCase)) {
           int prefLen = searchLen;
 
-          // Add quotes if spaces in name
-          if (name.find(" ") != name.npos) {
-            prefLen = fileSt.size();
-            std::string prefix = searchDir.string() + pathSep;
-            name = quote + prefix + name + quote;
-          }
           // check if a folder
           if (fs::is_directory(ent) and name.back() != pathSep) {
             name += pathSep;
@@ -473,7 +481,25 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
             prefLen += replaceLen;
             name = prepend + name;
           }
+
+          
+          bool needQuotes = false;
+          // Add quotes if spaces in name
+          if (name.find(" ") != name.npos) {
+            prefLen = fileSt.size();
+            // std::string prefix = searchDir.string() + pathSep;
+            // name = quote + prefix + name + quote;
+            // name = quote + name + quote;
+            needQuotes = true;
+          }
+          if (useRelPath) {
+            name = relPath.string() + pathSep + name;
+          }
+#ifdef USE_CROSSLINE          
+          matches.push_back({name, needQuotes});
+#else          
           matches.push_back(CompletionItem(name, prefLen, 0));
+#endif          
         }
     }
 

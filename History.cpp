@@ -27,7 +27,7 @@ namespace fs = std::filesystem;
 
 HistoryItem::HistoryItem(const std::string &c, const std::string &d, const std::string &f)
 {
-    cmd = c;
+    item = c;
     date = d;
     folder = f;    
 }
@@ -35,7 +35,7 @@ HistoryItem::HistoryItem(const std::string &c, const std::string &d, const std::
 
 std::ostream& operator<<(std::ostream &out, const HistoryItem& item) 
 {
-    out << item.cmd << ", " << item .date << ", " << item.folder;
+    out << item.item << ", " << item .date << ", " << item.folder;
     return out;
 }
 
@@ -144,7 +144,7 @@ int ShellHistoryClass::RevFind(const std::string &cmd, const int beg, const int 
     HistIter start = history.begin() + beg;
     HistIter fin = history.end() + end;
     for (int i = end; i >= beg; i--) {
-        if (history[i]->cmd == cmd) {
+        if (history[i]->item == cmd) {
             return i;
         }
     }
@@ -170,7 +170,7 @@ void ShellHistoryClass::Append(const std::string &cmd, const std::string &folder
             add = false;
         } else {
             std::ostringstream msg;
-            msg << "Erasing history item " << history[it]->cmd;
+            msg << "Erasing history item " << history[it]->item;
             Utilities::LogMessage(msg.str());
             history.erase(history.begin()+it);
         }
@@ -188,7 +188,7 @@ void ShellHistoryClass::Append(const std::string &cmd, const std::string &folder
             int start = std::max(0, no-20);
             bool add = true;
             for(int i = no-1; i >= start; i--) {
-                if (foldVec[i]->cmd == cmd) {
+                if (foldVec[i]->item == cmd) {
                     if (i == no-1) {
                         add = false;
                     } else {

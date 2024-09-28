@@ -16,9 +16,15 @@
 #include <unordered_map>
 
 
+#ifdef USE_CROSSLINE
+#include <crossline.h>
+class HistoryItem : public HistoryItemBase {
+public:
+#else    
 class HistoryItem {
 public:
-    std::string cmd;
+    std::string item;
+#endif
     std::string date;
     std::string folder;
 
@@ -28,7 +34,10 @@ public:
 };
 
 
+#ifndef USE_CROSSLINE
 typedef std::shared_ptr<HistoryItem> HistoryItemPtr;
+#endif
+
 
 class ShellHistoryClass {
 protected:

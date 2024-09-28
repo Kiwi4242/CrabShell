@@ -13,7 +13,19 @@
 #include <vector>
 #include <memory>
 
+#ifdef USE_CROSSLINE
+#include <crossline.h>
+#else
 #include <isocline_pp.h>
+#endif
+
+#ifdef USE_CROSSLINE
+  struct CompletionItem {
+    std::string comp;
+    bool needQuotes;
+    // int start;
+  };
+#endif
 
 
 namespace Utilities {
@@ -26,7 +38,6 @@ namespace Utilities {
 
   struct CompletionInfo {
     CompletionItem item;
-    bool NeedsQuotes;
   };
   
   bool IsWindows();
@@ -35,7 +46,7 @@ namespace Utilities {
   bool StartsWith(const std::string &mainStr, const std::string &startIn, const bool ignoreCase=false);
 
   bool StartsWith(const std::string &mainStr, const std::string &start, const bool ignoreCase);
-  bool GetFileMatches(const std::string &line, std::vector<CompletionItem> &matches);
+  bool GetFileMatches(const std::string &line, std::vector<CompletionItem> &matches, int &startPos);
 
   std::string AbbrevPath(const std::string &path, const int maxLen);
 

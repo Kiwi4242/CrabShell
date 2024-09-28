@@ -30,16 +30,25 @@ else:
 
 DEFINES = ['-std=c++17']
 
+useCrossline = True
+
 srcDir = '../'
-cppInc = [os.path.join(srcDir, 'isocline-pp/include'), ]
-libPath = [os.path.join(srcDir, 'isocline-pp/build_mingw')]
+if (useCrossline):
+    cppInc = [os.path.join(srcDir, 'Crossline-cpp')]
+    readLib = 'Crossline'
+    libPath = [os.path.join(srcDir, 'Crossline-cpp')]
+    DEFINES += ['-D=USE_CROSSLINE']
+else:    
+    cppInc = [os.path.join(srcDir, 'isocline-pp/include')]
+    readLib = 'isocline'
+    libPath = [os.path.join(srcDir, 'isocline-pp/build_mingw')]
 
 instDir = 'c:/MyPrograms/Installs'
 cppInc += [os.path.join(instDir, 'include')]
 
 libDir = os.path.join(instDir, 'lib')
 libPath += [libDir]
-libs = ['isocline', 'lua']
+libs = [readLib, 'lua']
 
 if (platform == "win32"):
     libs += ['shell32', 'kernel32', 'user32', 'shlwapi', 'ole32', 'uuid']
