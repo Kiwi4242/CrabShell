@@ -385,6 +385,35 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
   }
 
 
+  std::string BestPath(const std::string &p1, const std::string &dotP)
+  {
+    // Compare two versions of a path to find the "best"
+    // e.g.  ~/Home vs ..  - .. is best
+    //       ~/Home vs ../../../ ~/Home is best
+
+    if (dotP.length() == 0) {
+      return p1;
+    } else if (p1.length() == 0) {
+      return dotP;
+    }
+
+    // count number of ..
+    int n = 0;
+    size_t pos = dotP.find("..");
+    while (pos != dotP.npos) {
+      n++;
+      pos = dotP.find(pos+2);
+    }
+    if (n > 2) {
+      return p1;
+    }
+
+    if (p1.length() > dotP.length()) {
+      return dotP;
+    }
+    return p1;
+  }
+
 
   bool GetFileMatches(const std::string &line, std::vector<CompletionItem> &matches, int &startPos)
   {
@@ -422,16 +451,19 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
     fs::path pathNoName = fullPath.parent_path();
     fs::path fName = fullPath.filename();
 
-    fs::path relPath;
-    bool useRelPath = false;
-
+    // variables for building the path
+    // fs::path relPath;
+    // bool useRelPath = false;
     std::string prepend;
     int replaceLen = 0;
+
     if (pathNoName.empty()) {
       // just a file name, so search current dir
       searchDir = ".";   // fs::current_path();
       searchName = fileSt;
     } else {
+      // pathNoName is a folder
+      // first replace ~ with Home
       int tdPos;
       std::string pathSt = pathNoName.string();
       if ((tdPos = pathSt.find("~")) != std::string::npos) {
@@ -444,21 +476,32 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
             or (!fullPath.empty())) {
           replaceLen++;
         }
+        // update pathNoName
         pathSt = pathSt.substr(0, tdPos) + home + pathSt.substr(tdPos+1);
         pathNoName = fs::path(pathSt);
-        prepend = pathSt;
+        //prepend = pathSt;
       }
+
       searchDir = pathNoName;
       searchName = fullPath.filename().string();
-      useRelPath = true;
-      relPath = fs::relative(searchDir, GetCurrentDirectory());
-      if (relPath.string().find("..") == std::string::npos) {
-        // have no .. in path, so it is a full path. Add the root is there
-        relPath = searchDir;
+
+      // useRelPath = true;
+      fs::path relPath = fs::relative(searchDir, GetCurrentDirectory());
+      prepend = BestPath(searchDir.string(), relPath.string());
+
+      if (prepend.back() != Utilities::pathSep) {
+        prepend += Utilities::pathSep;
       }
-      if (relPath.empty() || relPath == ".") {
-        useRelPath = false;
-      }
+
+      // if (relPath.string().find("..") == std::string::npos) {
+      //   // have no .. in path, so it is a full path. Add the root is there
+      //   relPath = searchDir;
+      // } else {
+      //   prepend.clear();
+      // }
+      // if (relPath.empty() || relPath == ".") {
+      //   useRelPath = false;
+      // }
     }
 
     LogMessage("Searching for " + searchName + " in " + searchDir.string());
@@ -492,9 +535,9 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
             // name = quote + name + quote;
             needQuotes = true;
           }
-          if (useRelPath) {
-            name = relPath.string() + pathSep + name;
-          }
+          // if (useRelPath) {
+          //   name = relPath.string() + pathSep + name;
+          // }
 #ifdef USE_CROSSLINE          
           matches.push_back({name, needQuotes});
 #else          

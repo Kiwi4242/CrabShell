@@ -746,6 +746,8 @@ int main(int argc, char* argv[])
     readLine.Printf( "Welcome to CrabShell\n\n", "");
     readLine.crossline_color_set (CROSSLINE_FGCOLOR_DEFAULT);
 
+    readLine.AllowESCCombo(false);
+
 #else    
     // use StyleDef to use bbcode's for markup
     readLine.StyleDef("kbd","gray underline");     // you can define your own styles
@@ -765,6 +767,7 @@ int main(int argc, char* argv[])
 #endif
 
     
+    readLine.HistorySetup(true);
     // enable history; use a NULL filename to not persist history to disk
     readLine.ReadHistory("history.dat");
 
