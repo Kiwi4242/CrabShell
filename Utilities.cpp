@@ -420,16 +420,19 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
 
     CmdClass cmds;
     bool lastBlank = cmds.ParseLine(line, true);
-    std::vector<std::string> &args = cmds.tokens;
+    // std::vector<std::string> &args = cmds.LastToken();
 
     matches.clear();
 
-    std::string fileSt = args.back();
-    if (lastBlank > 0) {
-      args.pop_back();
-    }
+    CmdToken lastTok = cmds.LastToken();
+    std::string fileSt = lastTok.cmd;    // args.back();
 
-    startPos = line.rfind(fileSt);
+    // do this?
+    // if (lastBlank > 0) {
+    //   cmds.PopBack();
+    // }
+
+    startPos = lastTok.startPos;
 
     bool ignoreCase = isWindows;
     if (isWindows) {
@@ -697,6 +700,12 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
   }
 
 
+  CmdToken::CmdToken(const std::string tok, const int st, const int qp) {
+      cmd = tok;
+      startPos = st;
+      hasQuotes = qp >= 0;
+  }
+
  CmdClass::CmdClass() 
  {
     cmdToks[1] = "|"; cmdToks[2] = ">";
@@ -704,17 +713,17 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
  }
 
 
-  bool CmdClass::ParseTokens(const std::vector<std::string> &toks, const int tokInd)
+  bool CmdClass::IdentifyTokens(const std::vector<CmdToken> &toks, const int tokInd)
   {
     // parse line into  cmd arg <tok> right
     std::string tok = cmdToks[tokInd];
 
     bool hasTok = false;
-    std::vector<std::string> preToks;
-    std::vector<std::string> postToks;
+    std::vector<CmdToken> preToks;
+    std::vector<CmdToken> postToks;
 
     for (auto it=toks.begin(); it!=toks.end(); it++) {
-        if (*it == tok) {
+        if (it->cmd == tok) {
             hasTok = true;
             type = CmdType(tokInd);
         } else if (hasTok) {
@@ -727,9 +736,9 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
     if (tokInd > 1) {
         if (hasTok) {
             preCmd = std::make_shared<CmdClass>();
-            preCmd->ParseTokens(preToks, tokInd-1);
+            preCmd->IdentifyTokens(preToks, tokInd-1);
             postCmd = std::make_shared<CmdClass>();
-            postCmd->ParseTokens(postToks, tokInd);
+            postCmd->IdentifyTokens(postToks, tokInd);
         } else {
             tokens = preToks;
         }
@@ -746,7 +755,7 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
     out << "Type: " << type << "\n";
     if (type == PlainCmd) {
         for (int i = 0; i < tokens.size(); i++) {
-            out << tokens[i] << " ";
+            out << tokens[i].cmd << " ";
         }
         out << "\n";
     } else {
@@ -756,17 +765,14 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
 
   }
 
-
-  bool CmdClass::ParseLine(const std::string &line, const bool stripQuotes)
+    bool CmdClass::ParseLine(const std::string &line, const bool stripQuotes)
   {
       // parse line into tokens, returns true if the last character is a blank
       // the tokens honor quotes
       // if stripQuotes then remove quotes
 
-      std::stringstream ss(line);
-      std::string token;
+      // std::stringstream ss(line);
       char delim = ' ';
-      bool inQuotes = false;
 
 
       bool lastBlank = false;
@@ -780,35 +786,51 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
       }
       lastBlank = lastPos < line.length()-1;
 
-      std::vector<std::string> stToks;
-      while (std::getline(ss, token, delim)) {
+      bool inQuotes = false;
+      std::string token;
+      std::vector<CmdToken> stToks;
+      size_t delimInd;
+      size_t delimPos = 0;
+      size_t lineLen = line.length();
+      while (delimPos < lineLen) {
+          delimInd = std::min(line.find(delim, delimPos), lineLen);
+          token = line.substr(delimPos, delimInd-delimPos);
+
           size_t quotPos, lastPos;
-          // remove all quotes
+          // if we have an open quote we need to add the token, but note that we are closing the quote
           bool inQuotes2 = inQuotes;
           lastPos = 0;
+          quotPos = -1;
+          int quotStart = -1;
           while ((quotPos = token.find('"', lastPos)) != std::string::npos) {
+              // remove all quotes
+            if (quotStart < 0) {
+                quotStart = quotPos;
+            }
             if (stripQuotes) {
               token.erase(quotPos, 1);
             } else {
-              lastPos = quotPos + 1;
+              lastPos = 1;
             }
+            lastPos += quotPos;
             inQuotes2 = !inQuotes2;
           }
 
           if (!inQuotes) {
-              stToks.push_back(token);
+              stToks.push_back(CmdToken(token, delimPos, quotStart));
           } else {
-              stToks.back() += delim + token;
+              stToks.back().cmd += delim + token;
           }
 
           inQuotes = inQuotes2;
+          delimPos = delimInd + 1;
           // if (token.find('"') != std::string::npos) {
           //     inQuotes = !inQuotes;
           // }
       }
 
       // have the tokens so identify type
-      ParseTokens(stToks, CmdClass::Redirection);
+      IdentifyTokens(stToks, CmdClass::Redirection);
 
       return lastBlank;
   }
@@ -821,12 +843,27 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
 
   std::string CmdClass::GetArg(const int n) const
   {
-    return tokens[n];
+    return tokens[n].cmd;
   }
 
   void CmdClass::SetArg(const int n, const std::string &c)
   {
-    tokens[n] = c;
+    tokens[n].cmd = c;
+  }
+
+  const std::vector<CmdToken> &CmdClass::GetTokens() const
+  {
+    return tokens;
+  }
+
+  CmdToken CmdClass::LastToken() const
+  {
+    return tokens.back();
+  }
+
+  void CmdClass::PopBack()
+  {
+    tokens.pop_back();
   }
 
 }  // end namespace

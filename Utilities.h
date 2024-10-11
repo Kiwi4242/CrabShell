@@ -73,31 +73,42 @@ namespace Utilities {
 
 
   // bool ParseLine(const std::string &line, std::vector<std::string> &args, const bool stripQuotes);
-  
+
+  struct CmdToken {
+  public:
+    std::string cmd;
+    bool hasQuotes;
+    int startPos;        // the start position of the full token including quotes
+    CmdToken(const std::string tok, const int st, const int qp);
+  }; 
+
   class CmdClass {
       // class to store the elements of a command line
+
+  public:
       // Simple:      "jed fred.txt"
       // Redirection: "echo python PlotNSP.py > plotP.bat"
       // Pipes:       "type fred.txt | grep hello"
-
-  protected:
-      bool ParseTokens(const std::vector<std::string> &toks, const int tok);
-      std::string cmdToks[3];
-
-  public:
       enum CmdType {
           PlainCmd,
           Pipe,
           Redirection
       };
+      CmdType type;
+
+  protected:
+      bool IdentifyTokens(const std::vector<CmdToken> &toks, const int tok);
+      std::string cmdToks[3];
+
+      std::shared_ptr<CmdClass> preCmd;    // before a > or |
+      std::shared_ptr<CmdClass> postCmd;   // after a > or |
+      std::vector<CmdToken> tokens;     // broken into tokens
+      int numQuotes;                        // number of quotes in line
+
+  public:
 
       CmdClass();
 
-      CmdType type;
-      std::shared_ptr<CmdClass> preCmd;    // before a > or |
-      std::shared_ptr<CmdClass> postCmd;   // after a > or |
-      std::vector<std::string> tokens;     // broken into tokens
-      int numQuotes;                        // number of quotes in line
 
       bool ParseLine(const std::string &line, const bool stripQuotes);
 
@@ -106,7 +117,12 @@ namespace Utilities {
       void SetArg(const int n, const std::string &c);
 
       void Print(std::ostream &out);
+
+      const std::vector<CmdToken> &GetTokens() const;
+      CmdToken LastToken() const;
+      void PopBack();
   };
+
 
   class FileLock {
   protected:

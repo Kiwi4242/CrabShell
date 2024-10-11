@@ -187,7 +187,7 @@ bool ReadLineClass::Completer(const std::string &inp, const int pos, CrosslineCo
     Utilities::LogMessage("Completions for " + inp);
     for (size_t i = 0; i < comp.size(); i++) {
       auto cmd = comp[i];
-      const std::string &cmp = cmd.comp;
+      std::string &cmp = cmd.comp;
       std::ostringstream msg;
       msg << "\t" << cmp << " " << completions.start;
       Utilities::LogMessage(msg.str());
@@ -401,15 +401,19 @@ void ShellDataClass::AddAlias(const std::string &alias, const std::string &cmd)
 }
 
 
-bool ShellDataClass::RunHooks(std::vector<std::string> &args)
+bool ShellDataClass::RunHooks(const std::vector<Utilities::CmdToken> &args)
 {
   if (args.size() == 0) {
     return false;
   }
 
+  std::vector<std::string> argSts(args.size());
+  for (int i = 0; i < args.size(); i++) {
+    argSts[i] = args[i].cmd;
+  }
 
   // run any lua functions
-  if (lua->RunCommand(args)) {
+  if (lua->RunCommand(argSts)) {
     return true;
   }
 
@@ -428,10 +432,10 @@ bool ShellDataClass::RunHooks(std::vector<std::string> &args)
 #endif
 
   // hooks should be lowercase
-  std::string cmd = Utilities::ToLower(args[0]);
+  std::string cmd = Utilities::ToLower(argSts[0]);
   std::map<std::string, HookFunc>::iterator iter = hooks.find(cmd);
   if (iter != hooks.end()) {
-    return (iter->second)(args, *this);
+    return (iter->second)(argSts, *this);
   }
   return 0;
 
@@ -480,14 +484,14 @@ bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   
   Utilities::LogMessage("Running command " + commandLineArg);
 
-  Utilities::CmdClass cmds;
+  Utilities::CmdClass cmdInfo;
   // bool lastBlank = Utilities::ParseLine(commandLineArg, args, false);
-  cmds.ParseLine(commandLineArg, false);
+  cmdInfo.ParseLine(commandLineArg, false);
 
-  if (cmds.type == Utilities::CmdClass::PlainCmd) {
+  if (cmdInfo.type == Utilities::CmdClass::PlainCmd) {
     // at the moment deal with pipes or redirects using the system command
     
-    std::string cmd = cmds.GetArg(0);
+    std::string cmd = cmdInfo.GetArg(0);
 
     Utilities::StripString(cmd);
 
@@ -500,10 +504,10 @@ bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
 
     // update aliases
     if (aliases.count(cmd) > 0) {
-      cmds.SetArg(0, aliases[cmd]);
+      cmdInfo.SetArg(0, aliases[cmd]);
     }
 
-    bool res = RunHooks(cmds.tokens);
+    bool res = RunHooks(cmdInfo.GetTokens());
     if (res) {
       return res;
     }
@@ -511,11 +515,11 @@ bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
 
   // Reconstruct the command line - potoentially with alias
   std::string cmdLine;
-  std::vector<std::string> &args = cmds.tokens;
+  const std::vector<Utilities::CmdToken> &args = cmdInfo.GetTokens();
   for (int i = 0; i < args.size()-1; i++) {
-    cmdLine += args[i] + " ";
+    cmdLine += args[i].cmd + " ";
   }
-  cmdLine += args.back();
+  cmdLine += args.back().cmd;
 
   std::system(cmdLine.c_str());
 
@@ -743,7 +747,7 @@ int main(int argc, char* argv[])
     readLine.crossline_prompt_color_set(CROSSLINE_FGCOLOR_BLUEGREEN);
 
     readLine.crossline_color_set (CROSSLINE_FGCOLOR_BLUE);
-    readLine.Printf( "Welcome to CrabShell\n\n", "");
+    readLine.NewPrint( "Welcome to CrabShell\n\n");
     readLine.crossline_color_set (CROSSLINE_FGCOLOR_DEFAULT);
 
     readLine.AllowESCCombo(false);
@@ -763,7 +767,7 @@ int main(int argc, char* argv[])
     // inline hinting is enabled by default
     readLine.EnableHint(true);
 
-    readLine.Printf( "[b]Welcome to CrabShell[/b]\n\n", "");
+    readLine.NePrint( "[b]Welcome to CrabShell[/b]\n\n");
 #endif
 
     
@@ -774,7 +778,7 @@ int main(int argc, char* argv[])
     if (readLine.HistoryCount() > 16*1024) {
       std::ostringstream msg;
       msg << "[bold][blue]Have " << readLine.HistoryCount() << " history items. Suggest running CleanHistory[/][/]\n\n";
-      readLine.Print(msg.str());
+      readLine.NewPrint(msg.str());
     }
 
 
@@ -784,6 +788,9 @@ int main(int argc, char* argv[])
     while(true) {
       std::string curDir = shell->GetCurrentDir();    // get the folder for the history, as the cmd may be a cd
       std::string prompt = shell->GetPrompt();
+      if (debug) {
+        prompt = "Deb: " + prompt;
+      }
 #ifdef USE_CROSSLINE
       prompt += "> ";
 #endif      
@@ -801,22 +808,22 @@ int main(int argc, char* argv[])
         if (not res) {
           std::string err;
           if (Utilities::HasError(err)) {
-            readLine.Printf(err);
+            readLine.NewPrint(err);
           }
         }
       } catch (std::exception &e) {
         // catch and continue
         std::string err;
         if (Utilities::HasError(err)) {
-          readLine.Print(err);
+          readLine.NewPrint(err);
         } else {
-          readLine.Print("Error: with the command\n");
+          readLine.NewPrint("Error: with the command\n");
         }
       }
 
     }
 
-    readLine.Printf("Goodbye\n", "");
+    readLine.NewPrint("Goodbye\n");
 
   } catch (std::exception &e) {
     std::cerr << "Error starting CrabShell " << e.what() << "\n";
