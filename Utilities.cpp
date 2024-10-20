@@ -208,7 +208,7 @@ namespace Utilities {
   }
 
 
-  bool StripString(std::string &cmd)
+  bool StripStringBegin(std::string &cmd)
   /* remove white space at start of cmd */
   {
     int pos = cmd.find_first_not_of(" \t", 0);
@@ -218,6 +218,15 @@ namespace Utilities {
     return true;
   }
 
+  bool StripStringEnd(std::string &cmd)
+  /* remove white space at start of end */
+  {
+    int pos = cmd.find_last_not_of(" \t\r");
+    if (pos != cmd.npos && pos != 0) {
+      cmd.erase(pos+1);
+    }
+    return true;
+  }
 
   bool FixupPath(std::string &path)
   {
@@ -225,7 +234,7 @@ namespace Utilities {
        change any / to \
        */
     // remove blanks at start of line
-    StripString(path);
+    StripStringBegin(path);
 
     int pos;
     while ((pos = path.find('"', 0)) != path.npos) {
@@ -739,6 +748,7 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
             preCmd->IdentifyTokens(preToks, tokInd-1);
             postCmd = std::make_shared<CmdClass>();
             postCmd->IdentifyTokens(postToks, tokInd);
+            tokens = toks;
         } else {
             tokens = preToks;
         }
@@ -765,7 +775,7 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
 
   }
 
-    bool CmdClass::ParseLine(const std::string &line, const bool stripQuotes)
+  bool CmdClass::ParseLine(const std::string &line, const bool stripQuotes)
   {
       // parse line into tokens, returns true if the last character is a blank
       // the tokens honor quotes

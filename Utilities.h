@@ -54,7 +54,8 @@ namespace Utilities {
   std::string GetCurrentDirectory();
 
   bool FixupPath(std::string &path);
-  bool StripString(std::string &cmd);
+  bool StripStringBegin(std::string &cmd);
+  bool StripStringEnd(std::string &cmd);
 
   std::string ToLower(const std::string &st);
 

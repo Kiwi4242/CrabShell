@@ -98,7 +98,7 @@ public:
 
     virtual int HistoryCount();
 #ifdef USE_CROSSLINE
-    virtual HistoryItemPtr GetHistoryItem(const ssize_t n, const bool forward);
+    virtual HistoryItemPtr GetHistoryItem(const ssize_t n);
 #else    
     virtual std::string GetHistoryItem(const ssize_t n);
 #endif    
@@ -251,7 +251,7 @@ int ReadLineClass::HistoryCount()
 
 
 #ifdef USE_CROSSLINE
-HistoryItemPtr ReadLineClass::GetHistoryItem(const ssize_t n, const bool forward)
+HistoryItemPtr ReadLineClass::GetHistoryItem(const ssize_t n)
 #else
 std::string ReadLineClass::GetHistoryItem(const ssize_t n)
 #endif
@@ -259,9 +259,12 @@ std::string ReadLineClass::GetHistoryItem(const ssize_t n)
   int no = history.GetNoHistory();
   int ind = n;
   // interpret < 0 as from end
-  if (!forward) {
-    ind = no - 1 - n;  
-  } else if (n < 0) {
+  // if (!forward) {
+  //   ind = no - 1 - n;  
+  // } else if (n < 0) {
+  //   ind = no + n;
+  // }
+  if (n < 0) {
     ind = no + n;
   }
   if (ind < 0) {
@@ -488,12 +491,14 @@ bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   // bool lastBlank = Utilities::ParseLine(commandLineArg, args, false);
   cmdInfo.ParseLine(commandLineArg, false);
 
-  if (cmdInfo.type == Utilities::CmdClass::PlainCmd) {
-    // at the moment deal with pipes or redirects using the system command
+  // at the moment deal with pipes or redirects using the system command
+  if (cmdInfo.type == Utilities::CmdClass::PlainCmd ||
+      cmdInfo.type == Utilities::CmdClass::Pipe ||
+      cmdInfo.type == Utilities::CmdClass::Redirection) {
     
     std::string cmd = cmdInfo.GetArg(0);
 
-    Utilities::StripString(cmd);
+    Utilities::StripStringBegin(cmd);
 
     unsigned cmdLen = cmd.length();
     
@@ -516,6 +521,9 @@ bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
   // Reconstruct the command line - potoentially with alias
   std::string cmdLine;
   const std::vector<Utilities::CmdToken> &args = cmdInfo.GetTokens();
+  if (args.size() == 0) {
+    return false;
+  }
   for (int i = 0; i < args.size()-1; i++) {
     cmdLine += args[i].cmd + " ";
   }
@@ -588,6 +596,34 @@ namespace ShellFuncs {
     }
     return newSt;
 #else
+    std::string newSt;
+    bool inVar = false;
+    int pos = st.find("$");
+    int curPos = 0;
+    int len = st.size();
+    while (pos != st.npos) {
+      std::string nextSearch;
+      if (inVar) {
+        auto var = st.substr(curPos, pos-curPos);
+        var = Utilities::GetEnvVar(var);
+        newSt += var;
+        inVar = false;
+        nextSearch = "$";
+      } else {
+        newSt += st.substr(curPos, pos-curPos);
+        inVar = true;
+        nextSearch = ":";
+      }
+      curPos = pos + 1;
+      if (curPos >= len-1) {
+        break;
+      }
+      pos = st.find(nextSearch, curPos);
+    }
+    if (curPos < len) {
+      newSt += st.substr(curPos);
+    }
+    return newSt;
 #endif    
   }
 
@@ -600,7 +636,9 @@ namespace ShellFuncs {
         std::string var = cmd.substr(0, pos);
         std::string val = cmd.substr(pos+1);
         val = ExpandVars(val);
-        _putenv_s(var.c_str(), val.c_str());
+        // _putenv_s(var.c_str(), val.c_str());
+        std::string cmd = var + "=" + val;
+        putenv(const_cast<char*>(cmd.c_str()));
         // SetEnvironmentVariable(var.c_str(), val.c_str());
         return 1;
       }
@@ -744,13 +782,16 @@ int main(int argc, char* argv[])
     std::signal(SIGINT, SignalHandling::Handler);
 
 #ifdef USE_CROSSLINE
-    readLine.crossline_prompt_color_set(CROSSLINE_FGCOLOR_BLUEGREEN);
+    // readLine.crossline_prompt_color_set(CROSSLINE_FGCOLOR_BLUEGREEN);
+    readLine.PromptColorSet(CROSSLINE_FGCOLOR_CYAN);
 
-    readLine.crossline_color_set (CROSSLINE_FGCOLOR_BLUE);
-    readLine.NewPrint( "Welcome to CrabShell\n\n");
-    readLine.crossline_color_set (CROSSLINE_FGCOLOR_DEFAULT);
+    readLine.ColorSet (CROSSLINE_FGCOLOR_CYAN | CROSSLINE_FGCOLOR_BRIGHT);
+    readLine.PrintStr( "Welcome to CrabShell\n\n");
+    readLine.ColorSet (CROSSLINE_FGCOLOR_DEFAULT);
 
+#  ifdef __WIN32__
     readLine.AllowESCCombo(false);
+#  endif    
 
 #else    
     // use StyleDef to use bbcode's for markup
@@ -777,8 +818,8 @@ int main(int argc, char* argv[])
 
     if (readLine.HistoryCount() > 16*1024) {
       std::ostringstream msg;
-      msg << "[bold][blue]Have " << readLine.HistoryCount() << " history items. Suggest running CleanHistory[/][/]\n\n";
-      readLine.NewPrint(msg.str());
+      msg << "Have " << readLine.HistoryCount() << " history items. Suggest running CleanHistory\n\n";
+      readLine.PrintStr(msg.str());
     }
 
 
@@ -794,36 +835,37 @@ int main(int argc, char* argv[])
 #ifdef USE_CROSSLINE
       prompt += "> ";
 #endif      
-      std::string input = readLine.ReadLine(prompt);   // ctrl-d returns NULL (as well as errors)
-      try {
-        // readLine.Printf("%s\n", input.c_str());
-        bool res = shell->ProcessCommand(input);
-        if (input == "exit") {
-            break;
-        } 
+      std::string input;
+      if (readLine.ReadLine(prompt, input)) {   // ctrl-d returns NULL (as well as errors)
+        try {
+          // readLine.Printf("%s\n", input.c_str());
+          bool res = shell->ProcessCommand(input);
+          if (input == "exit") {
+              break;
+          } 
 
-        if (input.length() > 0)  {
-          readLine.AddHistory(input, curDir, !debug);
-        }
-        if (not res) {
+          if (input.length() > 0)  {
+            readLine.AddHistory(input, curDir, !debug);
+          }
+          if (not res) {
+            std::string err;
+            if (Utilities::HasError(err)) {
+              readLine.PrintStr(err);
+            }
+          }
+        } catch (std::exception &e) {
+          // catch and continue
           std::string err;
           if (Utilities::HasError(err)) {
-            readLine.NewPrint(err);
+            readLine.PrintStr(err);
+          } else {
+            readLine.PrintStr("Error: with the command\n");
           }
         }
-      } catch (std::exception &e) {
-        // catch and continue
-        std::string err;
-        if (Utilities::HasError(err)) {
-          readLine.NewPrint(err);
-        } else {
-          readLine.NewPrint("Error: with the command\n");
-        }
       }
-
     }
 
-    readLine.NewPrint("Goodbye\n");
+    readLine.PrintStr("Goodbye\n");
 
   } catch (std::exception &e) {
     std::cerr << "Error starting CrabShell " << e.what() << "\n";

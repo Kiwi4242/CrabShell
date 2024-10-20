@@ -71,6 +71,7 @@ bool ShellHistoryClass::Load(const std::string &inFile)
     // search start - "History:"
     bool found = false;
     for (std::string line; std::getline(inp, line);) {
+        Utilities::StripStringEnd(line);
         if (line == "History:") {
             found = true;
             break;
@@ -86,6 +87,7 @@ bool ShellHistoryClass::Load(const std::string &inFile)
     std::string line;
     while (std::getline(inp, line)) {
         // 3 records - Cmd, Date, Folder
+        Utilities::StripStringEnd(line);
         if (line.find(keys[0]) != line.npos) {
             // have found record
             for (int i = 0; i < 3; i++) {
