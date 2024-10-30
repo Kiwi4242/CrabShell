@@ -2,6 +2,12 @@
 -- AddAlias to add aliases
 -- DoCD to set working folder
 
+function Prompt(st)
+    
+end
+
+RegisterHook("Prompt", Prompt)
+
 AddAlias('rm', 'del /p')
 AddAlias('dirt', 'dir /od')
 

@@ -3,7 +3,9 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include <memory>
+
 
 class lua_State;
 class ShellDataClass;
@@ -13,6 +15,8 @@ protected:
     lua_State *L;
     std::vector<std::string> plugins;
 
+    std::map<std::string, std::string> hooks;
+
 public:
     LuaInterface(ShellDataClass *sh);
     bool LoadFile(const std::string &f);
@@ -20,6 +24,8 @@ public:
 
     bool LoadPlugins();
 
+    void AddHook(const std::string &hook, const std::string &func);
+    
     ShellDataClass *shell;
 
     // void AddFunc(const std::string &f) {

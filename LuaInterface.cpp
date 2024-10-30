@@ -19,6 +19,18 @@
 #define CrabShell_metatable "Crabshell"
 
 
+LuaInterface **GetLuaInterface(lua_State *L)
+{
+    lua_getglobal(L, "ShellInterface");
+    if (lua_isuserdata(L, -1)) {
+        LuaInterface **lua = static_cast<LuaInterface**>(lua_touserdata(L, -1));
+        // pop the lua interface
+        lua_pop(L, 1);
+        return lua;
+    }
+
+    return nullptr;
+}
 
 int RegisterFunc(lua_State* L)
 {
@@ -38,6 +50,47 @@ int RegisterFunc(lua_State* L)
     return 1;
 }
 
+int RegisterHook(lua_State* L)
+{
+    if (!(lua_isstring(L, -1))) {
+        std::cerr << "Invalid call to RegisterFunc. Should be RegisterFunc(name)\n";
+        return 0;
+    }
+    std::string hook = lua_tostring(L, -2);
+    std::string func = lua_tostring(L, -1);
+
+    LuaInterface **lua = GetLuaInterface(L);
+    if (lua) {
+        (*lua)->AddHook(hook, func);
+    }
+    return 1;
+}
+
+
+int ParseString(lua_State* L)
+{
+    // Parse the string at the top of the stack and return array of components
+    if (!(lua_isstring(L, -1))) {
+        std::cout << "Invalid call to ParseString. Should be ParseString(line)\n";
+        return 0;
+    }
+    std::string line = lua_tostring(L, -1);
+
+    Utilities::CmdClass cmds;
+    cmds.ParseLine(line, false);
+
+    const std::vector<Utilities::CmdToken> &words = cmds.GetTokens();
+
+    lua_newtable(L);
+    for(int i = 0; i < words.size(); i++) {
+        lua_pushinteger(L, i+1);
+        lua_pushstring(L, words[i].cmd.c_str());
+        lua_settable(L, -3);    // table is index -3
+    }
+
+    // table is at the top of the stack    
+    return 1;
+}
 
 int AddAlias(lua_State* L)
 {
@@ -48,11 +101,9 @@ int AddAlias(lua_State* L)
     std::string name = lua_tostring(L, -2);
     std::string cmd = lua_tostring(L, -1);
 
-    lua_getglobal(L, "ShellInterface");
-    if (lua_isuserdata(L, -1)) {
-        LuaInterface **lua = static_cast<LuaInterface**>(lua_touserdata(L, -1));
+    LuaInterface **lua = GetLuaInterface(L);
+    if (lua) {
         (*lua)->shell->AddAlias(name, cmd);
-        lua_pop(L, 1);
     }
 
     return 1;
@@ -67,11 +118,9 @@ int DoCD(lua_State* L)
     }
     std::string dir = lua_tostring(L, -1);
 
-    lua_getglobal(L, "ShellInterface");
-    if (lua_isuserdata(L, -1)) {
-        LuaInterface **lua = static_cast<LuaInterface**>(lua_touserdata(L, -1));
+    LuaInterface **lua = GetLuaInterface(L);
+    if (lua) {
         (*lua)->shell->DoCD(dir);
-        lua_pop(L, 1);
     }
 
     return 1;
@@ -97,6 +146,8 @@ LuaInterface::LuaInterface(ShellDataClass *sh) : shell(sh)
     luaL_openlibs(L);
 
     // AddFunction(L, "RegisterFunc", RegisterFunc);
+    AddFunction(L, "RegisterHook", RegisterHook);
+    AddFunction(L, "ParseString", ParseString);
     AddFunction(L, "AddAlias", AddAlias);
     AddFunction(L, "DoCD", DoCD);
 
@@ -106,6 +157,11 @@ LuaInterface::LuaInterface(ShellDataClass *sh) : shell(sh)
     lua_setglobal(L, "ShellInterface");
 }
 
+
+void LuaInterface::AddHook(const std::string &hook, const std::string &func)
+{
+    hooks[hook] = func;
+}
 
 bool LuaInterface::LoadFile(const std::string &f)
 {

@@ -404,7 +404,14 @@ void ShellDataClass::AddAlias(const std::string &alias, const std::string &cmd)
 }
 
 
-bool ShellDataClass::RunHooks(const std::vector<Utilities::CmdToken> &args)
+// various hooks for lua
+bool ShellDataClass::RunHook(const HookData &data)
+{
+  return true;
+}
+
+
+bool ShellDataClass::RunCommand(const std::vector<Utilities::CmdToken> &args)
 {
   if (args.size() == 0) {
     return false;
@@ -420,24 +427,10 @@ bool ShellDataClass::RunHooks(const std::vector<Utilities::CmdToken> &args)
     return true;
   }
 
-#ifdef TODO
-  // run any function in the cln file
-  int entry = interp.FindFunction(args[0].c_str());
-  if (entry != -1) {
-    int noArgs = args.size() - 1;
-    InterpVar *vars = new InterpVar[noArgs];
-    for(int i = 0; i < noArgs; i++)
-      vars[i] = InterpVar(args[i+1]);
-    int result =  interp.ExecuteFunction(args[0].c_str(), noArgs, vars);
-    delete [] vars;
-    return result;
-  }
-#endif
-
   // hooks should be lowercase
   std::string cmd = Utilities::ToLower(argSts[0]);
-  std::map<std::string, HookFunc>::iterator iter = hooks.find(cmd);
-  if (iter != hooks.end()) {
+  std::map<std::string, CmdFunc>::iterator iter = funcs.find(cmd);
+  if (iter != funcs.end()) {
     return (iter->second)(argSts, *this);
   }
   return 0;
@@ -512,7 +505,7 @@ bool ShellDataClass::ProcessCommand(const std::string &commandLineArg)
       cmdInfo.SetArg(0, aliases[cmd]);
     }
 
-    bool res = RunHooks(cmdInfo.GetTokens());
+    bool res = RunCommand(cmdInfo.GetTokens());
     if (res) {
       return res;
     }
@@ -665,13 +658,13 @@ ShellDataClass::ShellDataClass(const bool useLog, const std::string &localConfig
   configFolder = Utilities::GetConfigFolder();
   doLog = useLog;  
 
-  hooks["exit"] = &ShellFuncs::ExitFunc;
-  hooks["cd"] = &ShellFuncs::CD;
-  hooks["pwd"] = &ShellFuncs::PWD;
-  hooks["pushd"] = &ShellFuncs::PushDir;
-  hooks["popd"] = &ShellFuncs::PopDir;
-  hooks["setcolour"] = &ShellFuncs::SetColour;
-  hooks["set"] = &ShellFuncs::SetEnv;
+  funcs["exit"] = &ShellFuncs::ExitFunc;
+  funcs["cd"] = &ShellFuncs::CD;
+  funcs["pwd"] = &ShellFuncs::PWD;
+  funcs["pushd"] = &ShellFuncs::PushDir;
+  funcs["popd"] = &ShellFuncs::PopDir;
+  funcs["setcolour"] = &ShellFuncs::SetColour;
+  funcs["set"] = &ShellFuncs::SetEnv;
   maxPrompt = 25;
 
   std::string configFile;
@@ -681,15 +674,22 @@ ShellDataClass::ShellDataClass(const bool useLog, const std::string &localConfig
     configFile = (configFolder / "Config.dat").string();
   }
 
+  bool hasConfig = true;
+  if (!fs::exists(configFile)) {
+    std::cerr << "Cannot find " << configFile << "\n";
+    hasConfig = false;
+  }
 
 #ifdef USELUA
   lua = new LuaInterface(this);
-  lua->LoadFile(configFile);
-  lua->LoadPlugins();
+  if (hasConfig) {
+    lua->LoadFile(configFile);
+    lua->LoadPlugins();
+  }
 
 #else  
   ConfigMap configData;
-  if (LoadConfig(configFile, configData)) {
+  if (hasConfig && LoadConfig(configFile, configData)) {
     if (configData.count("Aliases") > 0) {
       std::vector<std::vector<std::string>> vals = configData["Aliases"];
       for (int i = 0; i < vals.size(); i++) {
@@ -707,7 +707,7 @@ ShellDataClass::ShellDataClass(const bool useLog, const std::string &localConfig
     }
   }
 #endif
-
+  
   GetPaths();
 }
 
@@ -769,6 +769,12 @@ int main(int argc, char* argv[])
     return 1;
   }
 
+  if (!Utilities::SetupConfigFolder()) {
+    std::cerr << "Could not find or setup the configuration folder " << 
+      Utilities::GetConfigFolder() << "\n";
+      return 1;
+  }
+
   Utilities::SetupLogging(doLog);
 
   try {
@@ -816,15 +822,12 @@ int main(int argc, char* argv[])
     // enable history; use a NULL filename to not persist history to disk
     readLine.ReadHistory("history.dat");
 
-    if (readLine.HistoryCount() > 16*1024) {
+    if (readLine.HistoryCount() > 20*1024) {
       std::ostringstream msg;
       msg << "Have " << readLine.HistoryCount() << " history items. Suggest running CleanHistory\n\n";
       readLine.PrintStr(msg.str());
     }
 
-
-    // run until empty input
-    char* input;
 
     while(true) {
       std::string curDir = shell->GetCurrentDir();    // get the folder for the history, as the cmd may be a cd

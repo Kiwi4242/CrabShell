@@ -128,6 +128,17 @@ namespace Utilities {
   }
 
 
+  bool SetupConfigFolder()
+  {
+      fs::path folder(GetConfigFolder());
+      if (!fs::exists(folder)) {
+        if (!fs::create_directory(folder)) {
+          return false;
+        }
+      }
+      return true;
+  }
+
   void SetConfigFolder(const std::string &fld)
   {
       customConfigFolder = fld;
@@ -394,31 +405,31 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
   }
 
 
-  std::string BestPath(const std::string &p1, const std::string &dotP)
+  std::string BestPath(const std::string &p1, const std::string &relPath)
   {
     // Compare two versions of a path to find the "best"
     // e.g.  ~/Home vs ..  - .. is best
     //       ~/Home vs ../../../ ~/Home is best
 
-    if (dotP.length() == 0) {
+    if (relPath.length() == 0) {
       return p1;
     } else if (p1.length() == 0) {
-      return dotP;
+      return relPath;
     }
 
     // count number of ..
     int n = 0;
-    size_t pos = dotP.find("..");
-    while (pos != dotP.npos) {
+    size_t pos = relPath.find("..");
+    while (pos != relPath.npos) {
       n++;
-      pos = dotP.find(pos+2);
+      pos = relPath.find(pos+2);
     }
     if (n > 2) {
       return p1;
     }
 
-    if (p1.length() > dotP.length()) {
-      return dotP;
+    if (p1.length() > relPath.length()) {
+      return relPath;
     }
     return p1;
   }

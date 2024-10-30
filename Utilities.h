@@ -62,6 +62,7 @@ namespace Utilities {
   std::string GetEnvVar(const std::string &var);
   std::string GetHome();
 
+  bool SetupConfigFolder();
   void SetConfigFolder(const std::string &fld);
   std::string GetConfigFolder();
 
