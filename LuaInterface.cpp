@@ -1,4 +1,19 @@
-// Provide an interface to a lua processor
+/* ----------------------------------------------------------------------------
+  Copyright (c) 2024, John Burnell
+  This is free software; you can redistribute it and/or modify it
+  under the terms of the MIT License. A copy of the license can be
+  found in the "LICENSE" file at the root of this distribution.
+
+  LuaInterface.cpp
+  Provide an interface to a lua processor
+
+  Provides an API for:
+
+  Updating the prompt
+  Processing file completions
+  Processing the history
+-----------------------------------------------------------------------------*/
+
 
 #include <iostream>
 #include <fstream>
@@ -110,6 +125,24 @@ int AddAlias(lua_State* L)
 }
 
 
+int SetVar(lua_State* L)
+{
+    // Set a controlling Crabshell variable
+    if (!lua_isstring(L, -1) || !lua_isstring(L, -2)) {
+        std::cout << "Invalid call to SetVar. Should be SetVar(var, val)\n";
+        return 0;
+    }
+    std::string var = lua_tostring(L, -2);
+    std::string val = lua_tostring(L, -1);
+
+    LuaInterface **lua = GetLuaInterface(L);
+    if (lua) {
+//        (*lua)->shell->SetVariable(var, val);
+    }
+
+    return 1;
+}
+
 int DoCD(lua_State* L)
 {
     if (!(lua_isstring(L, -1))) {
@@ -150,6 +183,7 @@ LuaInterface::LuaInterface(ShellDataClass *sh) : shell(sh)
     AddFunction(L, "ParseString", ParseString);
     AddFunction(L, "AddAlias", AddAlias);
     AddFunction(L, "DoCD", DoCD);
+    AddFunction(L, "SetVar", SetVar);
 
     int sz = sizeof(this);
     LuaInterface **luaPtr = reinterpret_cast<LuaInterface**>(lua_newuserdata(L, sz));

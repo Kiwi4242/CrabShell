@@ -9,7 +9,7 @@
 import os
 
 tools = {'win32': 'mingw', 'posix': 'default'}
-buildDirs = {'win32': 'build_mingw', 'posix': 'build_linux'}
+buildDirs = {'win32': 'build_mingw_cons', 'posix': 'build_linux_cons'}
 
 vars = Variables(None, ARGUMENTS)
 debugVar = BoolVariable("DEBUG", "Set to 1 to build a debug release", 0)

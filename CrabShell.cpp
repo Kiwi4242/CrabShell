@@ -122,6 +122,7 @@ ReadLineClass::ReadLineClass(std::shared_ptr<ShellDataClass> sh, const bool dbg)
     hintDelayMS = 300;
     lastHint = hintClock.now();
     debug = dbg;
+
 }
 
 // -------------------------------------------------------------------------------
@@ -798,6 +799,9 @@ int main(int argc, char* argv[])
 #  ifdef __WIN32__
     readLine.AllowESCCombo(false);
 #  endif    
+
+    // Set the maximum number of search items to return
+    readLine.HistorySetSearchMaxCount(12);
 
 #else    
     // use StyleDef to use bbcode's for markup
