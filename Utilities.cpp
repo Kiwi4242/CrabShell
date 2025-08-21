@@ -355,57 +355,6 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
   }
 
 
-
-  bool ParseLine_nu(const std::string &line, std::vector<std::string> &tokens, const bool stripQuotes)
-  {
-
-      std::stringstream ss(line);
-      std::string token;
-      char delim = ' ';
-      bool inQuotes = false;
-
-
-      bool lastBlank = false;
-      std::string whiteSpace(" \t");
-
-      // find last non-whitespace
-      size_t lastPos = line.find_last_not_of(whiteSpace);
-      if (lastPos == line.npos) {
-          // no non-whitespace
-          return true;
-      }
-      lastBlank = lastPos < line.length()-1;
-
-      while (std::getline(ss, token, delim)) {
-          size_t quotPos, lastPos;
-          // remove all quotes
-          bool inQuotes2 = inQuotes;
-          lastPos = 0;
-          while ((quotPos = token.find('"', lastPos)) != std::string::npos) {
-            if (stripQuotes) {
-              token.erase(quotPos, 1);
-            } else {
-              lastPos = quotPos + 1;
-            }
-            inQuotes2 = !inQuotes2;
-          }
-
-          if (!inQuotes) {
-              tokens.push_back(token);
-          } else {
-              tokens.back() += delim + token;
-          }
-
-          inQuotes = inQuotes2;
-          // if (token.find('"') != std::string::npos) {
-          //     inQuotes = !inQuotes;
-          // }
-      }
-
-      return lastBlank;
-  }
-
-
   std::string BestPath(const std::string &p1, const std::string &relPath)
   {
     // Compare two versions of a path to find the "best"
@@ -438,6 +387,8 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
 
   bool GetFileMatches(const std::string &line, std::vector<CompletionItem> &matches, int &startPos)
   {
+    // Find matches to last token in line
+    // if token is a blank then return startPos as -1 and match everything
 
     CmdClass cmds;
     bool lastBlank = cmds.ParseLine(line, true);
@@ -454,6 +405,9 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
     // }
 
     startPos = lastTok.startPos;
+    if (lastBlank) {
+      startPos = -1;
+    }
 
     bool ignoreCase = isWindows;
     if (isWindows) {
@@ -517,15 +471,6 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
         prepend += Utilities::pathSep;
       }
 
-      // if (relPath.string().find("..") == std::string::npos) {
-      //   // have no .. in path, so it is a full path. Add the root is there
-      //   relPath = searchDir;
-      // } else {
-      //   prepend.clear();
-      // }
-      // if (relPath.empty() || relPath == ".") {
-      //   useRelPath = false;
-      // }
     }
 
     LogMessage("Searching for " + searchName + " in " + searchDir.string());
@@ -562,82 +507,68 @@ int ReplaceAll(std::string &str, const std::string &from, const std::string &to)
           // if (useRelPath) {
           //   name = relPath.string() + pathSep + name;
           // }
-#ifdef USE_CROSSLINE          
-          matches.push_back({name, needQuotes});
-#else          
-          matches.push_back(CompletionItem(name, prefLen, 0));
-#endif          
+          matches.push_back({name, "", needQuotes});
         }
     }
 
     return true;
   }
 
+
+  bool FileCompleter::FindItems(const std::string &inp, Crossline &cLine, const int pos)
+  {
+    // complete file name
+    try {
+      std::vector<CompletionItem> comp;
+      int startPos;  // the start of the word being matched
+      // just pass the portion up to pos
+      std::string stIn = inp.substr(0, pos);
+      GetFileMatches(stIn, comp, startPos);
+      if (startPos < 0) {
+        startPos = pos;
+      }
+      Setup(startPos, pos);
+
+      LogMessage("Completions for " + inp);
+      for (size_t i = 0; i < comp.size(); i++) {
+        auto cmd = comp[i];
+        const std::string &cmp = cmd.GetWord();
+        std::ostringstream msg;
+        msg << "\t" << cmp << " " << start;
+        Utilities::LogMessage(msg.str());
+        Add(cmp, "", cmd.NeedQuotes());
+      }
+    } catch (std::exception &e) {
+    }
+
+    return Size() > 0;
+  }
+
   std::string AbbrevPath(const std::string &path, const int maxLen)
   {
-      /*
-      This function has been taken from PyCmd (https://sourceforge.net/projects/pycmd/) by Horea Haitonic
+    /*
+    This function has been taken from PyCmd (https://sourceforge.net/projects/pycmd/) by Horea Haitonic
 
-      Abbreviate a full path to make it shorter, yet still unambiguous.
+    Abbreviate a full path to make it shorter, yet still unambiguous.
 
-      This function takes a directory path and tries to abbreviate it as much as
-      possible while making sure that the resulting shortened path is not
-      ambiguous: a path element is only abbreviated if its shortened form is
-      unique in its directory (in other words, if a sybling would have the same
-      abbreviation, the original name is kept).
+    This function takes a directory path and tries to abbreviate it as much as
+    possible while making sure that the resulting shortened path is not
+    ambiguous: a path element is only abbreviated if its shortened form is
+    unique in its directory (in other words, if a sybling would have the same
+    abbreviation, the original name is kept).
 
-      The abbreviation is performed by keeping only the first letter of each
-      "word" composing a path element. "Words" are defined by CamelCase,
-      underscore_separation or "whitespace separation".
+    The abbreviation is performed by keeping only the first letter of each
+    "word" composing a path element. "Words" are defined by CamelCase,
+    underscore_separation or "whitespace separation".
 
-      Try to keep the path under 25 characters
-      d:\...\GFlowGui\Tests\Awi-10>
-      */
+    Try to keep the path under 25 characters
+    d:\...\SomeDir\Tests\Dir-10>
+    */
 
-      if (path.length() < maxLen) {
-          return path;
-      }
+    if (path.length() < maxLen) {
+        return path;
+    }
 
-/*
-
-      // origPath = path
-      drive, path = os.path.splitdrive(path);    // split c:/path into c: /path
-
-      // Split the path into folders using os.path.split - this give the tails
-      std::string st = path;
-      std::vector<std::string> tails;
-      int pathLen = 0;
-      while (st.length() > 1) {
-          head, tail = os.path.split(st);
-          st = head;
-          tails.append(tail);
-          pathLen += len(tail);
-      }
-      if (len(st) > 0) {
-          tails.append(st);
-      }
-      tails.reverse();
-
-      pathAbbrev = drive;
-
-      // Take first element of path
-      for tail in tails[:-1] {
-          if (pathLen < elemLen):
-              pathAbbrev = os.path.join(pathAbbrev, tail)  # use whole path
-          else:
-              pathAbbrev = os.path.join(pathAbbrev, tail[0:1])  # first letter only
-      }
-
-      tail = tails[-1];
-      if (len(tail) > elemLen) {
-          pathAbbrev = os.path.join(pathAbbrev, '...')
-          pathAbbrev += tail[-elemLen:]
-      } else {
-          pathAbbrev = os.path.join(pathAbbrev, tail);
-        }
-
-      return pathAbbrev;
-  */
 
     fs::path fullPath(path);
     auto root = fullPath.root_name();

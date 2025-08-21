@@ -8,8 +8,11 @@
 '''
 import os
 
+import sys
+print('Debug=', ARGUMENTS, sys.argv)
+
 tools = {'win32': 'mingw', 'posix': 'default'}
-buildDirs = {'win32': 'build_mingw_cons', 'posix': 'build_linux_cons'}
+buildDirs = {'win32': 'build_mingw_scons', 'posix': 'build_linux_scons'}
 
 vars = Variables(None, ARGUMENTS)
 debugVar = BoolVariable("DEBUG", "Set to 1 to build a debug release", 0)
@@ -22,11 +25,14 @@ debug = defEnv.get('DEBUG', 0)
 
 platform = defEnv['PLATFORM']
 
+print('Debug=', debug, ARGUMENTS, sys.argv)
 
 if (debug):
     OPT = ['-g']
+    suffix = '_debug'
 else:
     OPT = ['-O2']
+    suffix = ''
 
 DEFINES = ['-std=c++17']
 
@@ -35,7 +41,7 @@ useCrossline = True
 srcDir = '../'
 if (useCrossline):
     cppInc = [os.path.join(srcDir, 'Crossline-cpp')]
-    readLib = 'Crossline'
+    readLib = 'Crossline' + suffix
     libPath = [os.path.join(srcDir, 'Crossline-cpp')]
     DEFINES += ['-D=USE_CROSSLINE']
 else:    
@@ -53,7 +59,7 @@ libs = [readLib, 'lua']
 if (platform == "win32"):
     libs += ['shell32', 'kernel32', 'user32', 'shlwapi', 'ole32', 'uuid']
 
-buildDir = buildDirs[platform]
+buildDir = buildDirs[platform] + suffix
 
 env = Environment(tools=[tools[platform]], CPPPATH=cppInc, CPPFLAGS=OPT+DEFINES)
 
@@ -67,7 +73,8 @@ progs = {'CrabShell': ['CrabShell.cpp', 'History.cpp', 'Utilities.cpp', 'Config.
 
 srcObj = {}
 for p in progs:
+    nm = p + suffix
     obj = env.Object([os.path.join(buildDir, f) for f in progs[p]])
-    env.Program(target=p, source=obj, LINKFLAGS=OPT+DEFINES, LIBPATH=libPath, LIBS=libs)
+    env.Program(target=nm, source=obj, LINKFLAGS=OPT+DEFINES, LIBPATH=libPath, LIBS=libs)
 
 

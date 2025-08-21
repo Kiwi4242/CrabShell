@@ -290,15 +290,6 @@ bool LuaInterface::LoadPlugins()
 }
 
 
-#if 0
-LuaInterface *LuaInterface::GetLua()
-{
-    static LuaInterface instance;  // Guaranteed to be destroyed.
-                                   // Instantiated on first use.
-    return &instance;
-}
-#endif
-
 #ifdef HAVEMAIN
 
 int main (int argc, char* argv[])

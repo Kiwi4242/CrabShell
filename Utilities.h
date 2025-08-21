@@ -14,20 +14,7 @@
 #include <vector>
 #include <memory>
 
-#ifdef USE_CROSSLINE
 #include <crossline.h>
-#else
-#include <isocline_pp.h>
-#endif
-
-#ifdef USE_CROSSLINE
-  struct CompletionItem {
-    std::string comp;
-    bool needQuotes;
-    // int start;
-  };
-#endif
-
 
 namespace Utilities {
 
@@ -37,10 +24,13 @@ namespace Utilities {
   static const char pathSep = '/';
 #endif
 
-  struct CompletionInfo {
-    CompletionItem item;
+  class FileCompleter : public CompleterClass {
+  public:
+      // Complete the string in inp, return match in completions and the prefix that was matched in pref, called when the user presses tab
+      virtual bool FindItems(const std::string &inp, Crossline &cLine, const int pos);
   };
-  
+
+
   bool IsWindows();
   
   void SplitString(const std::string &st, const std::string &sep, std::vector<std::string> &res);
@@ -74,8 +64,6 @@ namespace Utilities {
   void LogError(const std::string &msg);
   bool HasError(std::string &msg);
 
-
-  // bool ParseLine(const std::string &line, std::vector<std::string> &args, const bool stripQuotes);
 
   struct CmdToken {
   public:

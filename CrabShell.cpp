@@ -28,9 +28,9 @@ namespace fs = std::filesystem;
 using namespace std::chrono_literals;
 
 #ifdef __WIN32__
-#include <shlobj.h>
-#include <shlwapi.h>
-#include <objbase.h>
+# include <shlobj.h>
+# include <shlwapi.h>
+# include <objbase.h>
 
 // break some of the Utilities routines
 # ifdef GetCurrentDirectory
@@ -40,11 +40,7 @@ using namespace std::chrono_literals;
 
 #endif
 
-#ifdef USE_CROSSLINE
 #include <crossline.h>
-#else
-#include <isocline_pp.h>
-#endif
 
 #include "ShellData.h"
 #include "History.h"
@@ -61,14 +57,10 @@ using namespace std::chrono_literals;
 extern char ** environ;
 
 
-#ifdef USE_CROSSLINE
 class ReadLineClass : public Crossline {
-#else
-class ReadLineClass : public IsoclinePP {
-#endif
 protected:
   std::shared_ptr<ShellDataClass> shell;
-  ShellHistoryClass history;
+  // ShellHistoryClass history;
 
 
   std::chrono::high_resolution_clock hintClock;
@@ -79,50 +71,26 @@ protected:
 public:
     ReadLineClass(std::shared_ptr<ShellDataClass> sh, const bool debug);
 
-    // Complete after tab called
-#ifdef USE_CROSSLINE      
-    bool Completer(const std::string &inp, const int pos, CrosslineCompletions &completions);
-#else    
-    bool Completer(const std::string &inp, std::vector<CompletionItem> &completions);
-#endif
-
     // Provide a hint after a new character is entered
     bool Hint(const std::string &inp, CompletionItem &hint, const bool atEnd);
 
-#ifndef USE_CROSSLINE
-    using IsoclinePP::AddHistory;
-#endif    
     virtual void AddHistory(const std::string &statement, const std::string &folder, const bool write);
 
     void ReadHistory(const std::string &name);
 
     virtual int HistoryCount();
-#ifdef USE_CROSSLINE
-    virtual HistoryItemPtr GetHistoryItem(const ssize_t n);
-#else    
-    virtual std::string GetHistoryItem(const ssize_t n);
-#endif    
+    virtual HistoryItemPtr GetHistoryItem(const ssize_t n) const;
     virtual void HistoryDelete(const ssize_t ind, const ssize_t n);
     virtual void HistoryAdd(const std::string &st);
-
 };
 
 
-#ifdef USE_CROSSLINE
-ReadLineClass::ReadLineClass(std::shared_ptr<ShellDataClass> sh, const bool dbg) : Crossline(), shell(sh) 
-#else
-ReadLineClass::ReadLineClass(std::shared_ptr<ShellDataClass> sh, const bool dbg) : IsoclinePP(), shell(sh) 
-#endif
+ReadLineClass::ReadLineClass(std::shared_ptr<ShellDataClass> sh, const bool dbg) : 
+  Crossline(new Utilities::FileCompleter(), new ShellHistoryClass()), shell(sh) 
 {
-#ifndef USE_CROSSLINE  
-    EnableHint(true);
-    EnableMultiLine(false);
-    UseCustomHistory();
-#endif    
     hintDelayMS = 300;
     lastHint = hintClock.now();
     debug = dbg;
-
 }
 
 // -------------------------------------------------------------------------------
@@ -169,61 +137,13 @@ bool ReadLineClass::Hint(const std::string &inp, CompletionItem &hint, const boo
       }
     }
 #endif
+    // need to rewrite hints for Crossline
     return false;
 }
 
 
-#ifdef USE_CROSSLINE      
-bool ReadLineClass::Completer(const std::string &inp, const int pos, CrosslineCompletions &completions)
-{
-  // complete file name
-  try {
-    std::vector<CompletionItem> comp;
-    int startPos;  // the start of the word being matched
-    // just pass the portion up to pos
-    std::string stIn = inp.substr(0, pos);
-    Utilities::GetFileMatches(stIn, comp, startPos);
-    completions.Setup(startPos, pos);
-
-    Utilities::LogMessage("Completions for " + inp);
-    for (size_t i = 0; i < comp.size(); i++) {
-      auto cmd = comp[i];
-      std::string &cmp = cmd.comp;
-      std::ostringstream msg;
-      msg << "\t" << cmp << " " << completions.start;
-      Utilities::LogMessage(msg.str());
-      completions.Add(cmp, "", cmd.needQuotes);
-    }
-  } catch (std::exception &e) {
-  }
-
-  return completions.Size() > 0;
-}
-#else
-bool ReadLineClass::Completer(const std::string &inp, std::vector<CompletionItem> &completions)
-{
-  // complete file name
-  try {
-    
-    Utilities::GetFileMatches(inp, completions);
-
-    Utilities::LogMessage("Completions for " + inp);
-    for (size_t i = 0; i < completions.size(); i++) {
-      const CompletionItem &cmp = completions[i];
-      std::ostringstream msg;
-      msg << "\t" << cmp.comp << " " << cmp.delBefore;
-      Utilities::LogMessage(msg.str());
-    }
-  } catch (std::exception &e) {
-  }
-
-  return completions.size() > 0;
-}
-#endif
-
 void ReadLineClass::AddHistory(const std::string &statement, const std::string &folder, const bool write)
 {
-  // IsoclinePP::AddHistory(statement);
 
   std::chrono::high_resolution_clock clock;
   auto t1 = clock.now();
@@ -232,7 +152,8 @@ void ReadLineClass::AddHistory(const std::string &statement, const std::string &
   std::strftime(nowSt, 128, "%Y-%m-%d %H:%M:%S", std::localtime(&t2));
   // std::string nowSt = std::put_time(std::localtime(&t2), "%F %T.\n");
 
-  history.Append(statement, folder, nowSt, write);
+  ShellHistoryClass *his = dynamic_cast<ShellHistoryClass*>(history);
+  his->Append(statement, folder, nowSt, write);
 }
 
 
@@ -240,62 +161,39 @@ void ReadLineClass::ReadHistory(const std::string &name)
 {
     fs::path inPath = fs::path(Utilities::GetConfigFolder()) / name;
 
-   history.Clear();
-   history.Load(inPath.string());
+   ShellHistoryClass *his = dynamic_cast<ShellHistoryClass*>(history);
+   his->Clear();
+   his->Load(inPath.string());
 }
 
 
 int ReadLineClass::HistoryCount() 
 {
-    return history.GetNoHistory();
+    return history->Size();
 }
 
 
-#ifdef USE_CROSSLINE
-HistoryItemPtr ReadLineClass::GetHistoryItem(const ssize_t n)
-#else
-std::string ReadLineClass::GetHistoryItem(const ssize_t n)
-#endif
+HistoryItemPtr ReadLineClass::GetHistoryItem(const ssize_t n) const
 {
-  int no = history.GetNoHistory();
+  int no = history->Size();
   int ind = n;
   // interpret < 0 as from end
-  // if (!forward) {
-  //   ind = no - 1 - n;  
-  // } else if (n < 0) {
-  //   ind = no + n;
-  // }
   if (n < 0) {
     ind = no + n;
   }
   if (ind < 0) {
-#ifdef USE_CROSSLINE
-    return std::make_shared<HistoryItem>("", "", "");
-#else    
-    return "";
-#endif    
+    return std::make_shared<CrabHistoryItem>("", "", "");
   }
   if (ind <= no) {    // the call starts at 1
-#ifdef USE_CROSSLINE
-    HistoryItemPtr ptr = history.Get(ind);
+    HistoryItemPtr ptr = history->GetHistoryItem(ind);
     std::string st = ptr->item;
-#else    
-    std::string st = history.Get(ind)->cmd;
-#endif    
+
     std::ostringstream msg;
     msg << "Returning history item " << n << " " << ind << " " << no << " " << st;
     Utilities::LogMessage(msg.str());
-#ifdef USE_CROSSLINE
     return ptr;
-#else    
-    return st;
-#endif    
   }
-#ifdef USE_CROSSLINE
-    return std::make_shared<HistoryItem>("", "", "");
-#else    
-  return "";
-#endif  
+  return std::make_shared<CrabHistoryItem>("", "", "");
 }
 
 void ReadLineClass::HistoryDelete(const ssize_t ind, const ssize_t n)
@@ -423,10 +321,12 @@ bool ShellDataClass::RunCommand(const std::vector<Utilities::CmdToken> &args)
     argSts[i] = args[i].cmd;
   }
 
+#ifdef USELUA
   // run any lua functions
   if (lua->RunCommand(argSts)) {
     return true;
   }
+#endif
 
   // hooks should be lowercase
   std::string cmd = Utilities::ToLower(argSts[0]);
@@ -715,9 +615,11 @@ ShellDataClass::ShellDataClass(const bool useLog, const std::string &localConfig
 
 ShellDataClass::~ShellDataClass()
 {
+#ifdef USELUA
   if (lua != nullptr) {
     delete lua;
   }
+#endif  
 }
 
 
@@ -788,13 +690,14 @@ int main(int argc, char* argv[])
     // set signal handler
     std::signal(SIGINT, SignalHandling::Handler);
 
-#ifdef USE_CROSSLINE
     // readLine.crossline_prompt_color_set(CROSSLINE_FGCOLOR_BLUEGREEN);
     readLine.PromptColorSet(CROSSLINE_FGCOLOR_CYAN);
 
     readLine.ColorSet (CROSSLINE_FGCOLOR_CYAN | CROSSLINE_FGCOLOR_BRIGHT);
     readLine.PrintStr( "Welcome to CrabShell\n\n");
     readLine.ColorSet (CROSSLINE_FGCOLOR_DEFAULT);
+
+    readLine.PagingSet(false);
 
 #  ifdef __WIN32__
     readLine.AllowESCCombo(false);
@@ -803,25 +706,6 @@ int main(int argc, char* argv[])
     // Set the maximum number of search items to return
     readLine.HistorySetSearchMaxCount(12);
 
-#else    
-    // use StyleDef to use bbcode's for markup
-    readLine.StyleDef("kbd","gray underline");     // you can define your own styles
-    readLine.StyleDef("ic-prompt","cadetblue");     // you can define your own styles
-    // ic_style_def("ic-prompt","ansi-maroon");  // or re-define system styles
-
-    // enable syntax highlighting with a highlight function
-    // ic_set_default_highlighter(highlighter, NULL);
-
-    // try to auto complete after a completion as long as the completion is unique
-    readLine.EnableAutoTab(false);
-
-    // inline hinting is enabled by default
-    readLine.EnableHint(true);
-
-    readLine.NePrint( "[b]Welcome to CrabShell[/b]\n\n");
-#endif
-
-    
     readLine.HistorySetup(true);
     // enable history; use a NULL filename to not persist history to disk
     readLine.ReadHistory("history.dat");
@@ -839,9 +723,8 @@ int main(int argc, char* argv[])
       if (debug) {
         prompt = "Deb: " + prompt;
       }
-#ifdef USE_CROSSLINE
       prompt += "> ";
-#endif      
+
       std::string input;
       if (readLine.ReadLine(prompt, input)) {   // ctrl-d returns NULL (as well as errors)
         try {

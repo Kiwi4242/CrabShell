@@ -16,33 +16,26 @@
 #include <memory>
 #include <unordered_map>
 
-
-#ifdef USE_CROSSLINE
 #include <crossline.h>
-class HistoryItem : public HistoryItemBase {
+
+
+class CrabHistoryItem : public HistoryItem {
 public:
-#else    
-class HistoryItem {
-public:
-    std::string item;
-#endif
     std::string date;
     std::string folder;
 
-    HistoryItem(){}
-    HistoryItem(const std::string &c, const std::string &d, const std::string &f);
+    CrabHistoryItem(){}
+    CrabHistoryItem(const std::string &c, const std::string &d, const std::string &f);
 
 };
 
 
-#ifndef USE_CROSSLINE
-typedef std::shared_ptr<HistoryItem> HistoryItemPtr;
-#endif
+typedef std::shared_ptr<CrabHistoryItem> CrabHistoryItemPtr;
 
 
-class ShellHistoryClass {
+class ShellHistoryClass : public HistoryClass {
 protected:
-    std::vector<HistoryItemPtr> history;            // store all the history
+    // std::vector<HistoryItemPtr> history;            // store all the history
     std::unordered_map<std::string, std::vector<HistoryItemPtr>> folderMap;    // map commands per folder
     std::vector<HistoryItemPtr> noFolderMap;                                   // any commands without a folder
     std::string fileName;
@@ -56,14 +49,12 @@ public:
     // bool GetMatch(const std::string &pref);
 
     unsigned int GetNoHistory() const {
-        return history.size();
+        return Size();
     }
 
-    const HistoryItemPtr &Get(const unsigned int n) const;
     std::vector<HistoryItemPtr> GetFolderItems(const std::string &folder);
     const std::vector<HistoryItemPtr> &GetNoFolderItems();
 
-    void Clear();
     void Append(const std::string &cmd, const std::string &folder, const std::string &t, const bool appendToFile);
 };
 

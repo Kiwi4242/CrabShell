@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 #include "Utilities.h"
 
 
-HistoryItem::HistoryItem(const std::string &c, const std::string &d, const std::string &f)
+CrabHistoryItem::CrabHistoryItem(const std::string &c, const std::string &d, const std::string &f)
 {
     item = c;
     date = d;
@@ -34,24 +34,15 @@ HistoryItem::HistoryItem(const std::string &c, const std::string &d, const std::
 }
 
 
-std::ostream& operator<<(std::ostream &out, const HistoryItem& item) 
+std::ostream& operator<<(std::ostream &out, const CrabHistoryItem& item) 
 {
     out << item.item << ", " << item .date << ", " << item.folder;
     return out;
 }
 
 
-ShellHistoryClass::ShellHistoryClass()
+ShellHistoryClass::ShellHistoryClass() : HistoryClass()
 {
-}
-
-
-const HistoryItemPtr &ShellHistoryClass::Get(const unsigned int n) const
-{
-    if (n < 0 or n > history.size()) {
-        throw std::out_of_range("Range error in History::Get()");
-    }
-    return history[n];
 }
 
 
@@ -107,11 +98,11 @@ bool ShellHistoryClass::Load(const std::string &inFile)
                      entries[i] = st;
                 }
                 if (i < 2 and !std::getline(inp, line)) {
-                    return history.size() > 0;
+                    return Size() > 0;
                 }
             }
-            HistoryItemPtr item = std::make_shared<HistoryItem>(entries[0], entries[1], entries[2]);
-            history.push_back(item);
+            CrabHistoryItemPtr item = std::make_shared<CrabHistoryItem>(entries[0], entries[1], entries[2]);
+            Add(item);
             // historyMap[entries[0]] = item;
             if (entries[2].size() > 0) {
                 folderMap[entries[2]].push_back(item);
@@ -122,32 +113,24 @@ bool ShellHistoryClass::Load(const std::string &inFile)
     }
 
     std::ostringstream msg;
-    msg << "Read history with " << GetNoHistory() << " items\n";
+    msg << "Read history with " << Size() << " items\n";
     Utilities::LogMessage(msg.str());
 
     return true;
 }
 
-/*
-bool ShellHistoryClass::GetMatch(const std::string &pref)
-{
-    return true;
-}
-*/
 
-void ShellHistoryClass::Clear()
-{
-    history.clear();
-}
+typedef std::vector<SearchItemPtr>::iterator HistIter;
 
-typedef std::vector<HistoryItemPtr>::iterator HistIter;
+// end is index from start
 int ShellHistoryClass::RevFind(const std::string &cmd, const int beg, const int end)
 {
     // Search from fin to begin for cmd
-    HistIter start = history.begin() + beg;
-    HistIter fin = history.end() + end;
+    HistIter start = items.begin() + beg;
+    HistIter fin = items.begin() + end;
     for (int i = end; i >= beg; i--) {
-        if (history[i]->item == cmd) {
+        HistoryItemPtr p = MakeItemPtr(items[i]);
+        if (p->item == cmd) {
             return i;
         }
     }
@@ -159,27 +142,29 @@ int ShellHistoryClass::RevFind(const std::string &cmd, const int beg, const int 
 void ShellHistoryClass::Append(const std::string &cmd, const std::string &folder, 
                                const std::string &tm, const bool appendToFile)
 {
-    HistoryItemPtr item = std::make_shared<HistoryItem>(cmd, tm, folder);
+    CrabHistoryItemPtr item = std::make_shared<CrabHistoryItem>(cmd, tm, folder);
 
     bool add = true;
     // remove any old entries in the last 50 
-    int noFind = std::min(50, int(history.size()));
-    int startInd = history.size() - noFind;
+    int noHis = Size();
+    int noFind = std::min(50, int(noHis));
+    int startInd = noHis - noFind;
 
-    int fin = history.size()-1;
+    int fin = noHis-1;
     auto it = RevFind(cmd, startInd, fin);
     if (it >= 0) {
         if (it == fin) {
             add = false;
         } else {
             std::ostringstream msg;
-            msg << "Erasing history item " << history[it]->item;
+            auto p = MakeItemPtr(items[it]);
+            msg << "Erasing history item " << p->item;
             Utilities::LogMessage(msg.str());
-            history.erase(history.begin()+it);
+            items.erase(items.begin()+it);
         }
     }
     if (add) {
-        history.push_back(item);
+        Add(item);
     }
 
     // Assign to a folder
